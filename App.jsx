@@ -28,7 +28,7 @@ import {
   Cell
 } from 'recharts';
 
-import { api } from './api';
+import { api } from './apiClient';
 
 // --- Error Handling ---
 function handleAppError(error) {
