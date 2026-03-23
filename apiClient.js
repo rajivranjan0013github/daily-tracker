@@ -27,9 +27,31 @@ export const api = {
     if (!res.ok) throw new Error(`Failed to delete project: ${res.status}`);
   },
 
+  // Handlers
+  async getHandlers() {
+    const res = await fetch(`${API_BASE_URL}/handlers`);
+    return handleResponse(res);
+  },
+  async addHandler(name, handleId) {
+    const res = await fetch(`${API_BASE_URL}/handlers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, handleId }),
+    });
+    return handleResponse(res);
+  },
+  async deleteHandler(id) {
+    const res = await fetch(`${API_BASE_URL}/handlers/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`Failed to delete handler: ${res.status}`);
+  },
+
   // Accounts
   async getAccounts() {
     const res = await fetch(`${API_BASE_URL}/accounts`);
+    return handleResponse(res);
+  },
+  async getAccountsByHandler(handlerId) {
+    const res = await fetch(`${API_BASE_URL}/accounts/handler/${handlerId}`);
     return handleResponse(res);
   },
   async addAccount(accountData) {

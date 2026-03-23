@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { Project } from './models/Project.js';
+import { Handler } from './models/Handler.js';
 import { Account } from './models/Account.js';
 import { VideoPost } from './models/VideoPost.js';
 
@@ -57,6 +58,37 @@ app.post('/api/projects', async (req, res) => {
 app.delete('/api/projects/:id', async (req, res) => {
   try {
     await Project.findByIdAndDelete(req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Handlers ---
+app.get('/api/handlers', async (req, res) => {
+  try {
+    const handlers = await Handler.find({ uid: 'default_user' });
+    res.json(handlers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/handlers', async (req, res) => {
+  try {
+    const handler = new Handler({ ...req.body, uid: 'default_user' });
+    await handler.save();
+    res.status(201).json(handler);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/handlers/:id', async (req, res) => {
+  try {
+    await Handler.findByIdAndDelete(req.params.id);
+    // Optionally remove handlerId from assigned accounts
+    await Account.updateMany({ handlerId: req.params.id }, { $unset: { handlerId: "" } });
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -121,6 +153,45 @@ app.delete('/api/posts/:accountId/:date/:index', async (req, res) => {
     const { accountId, date, index } = req.params;
     await VideoPost.findOneAndDelete({ accountId, date, index });
     res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Handler Lookup ---
+app.get('/api/accounts/lookup/:platform/:username', async (req, res) => {
+  try {
+    const account = await Account.findOne({ 
+      platform: req.params.platform,
+      username: { $regex: new RegExp(`^${req.params.username}$`, 'i') } 
+    });
+    if (!account) return res.status(404).json({ error: 'Account not found for this platform' });
+    res.json(account);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/accounts/handler/:handleId', async (req, res) => {
+  try {
+    const handler = await Handler.findOne({ handleId: req.params.handleId, uid: 'default_user' });
+    if (!handler) {
+      return res.status(404).json({ error: 'Handler not found. Invalid link.' });
+    }
+    const accounts = await Account.find({ handlerId: handler._id, uid: 'default_user' });
+    res.json(accounts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/posts/:accountId/:date', async (req, res) => {
+  try {
+    const posts = await VideoPost.find({
+      accountId: req.params.accountId,
+      date: req.params.date,
+    });
+    res.json(posts);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

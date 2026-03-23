@@ -14,9 +14,33 @@ import {
   AlertCircle,
   Loader2,
   Layers,
-  Eye
+  Eye,
+  Copy,
+  Check,
+  Facebook,
+  Youtube,
+  ExternalLink,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+const PLATFORMS = [
+  { value: 'instagram', label: 'Instagram', icon: Instagram, gradient: 'from-purple-500 via-pink-500 to-orange-400' },
+  { value: 'facebook', label: 'Facebook', icon: Facebook, gradient: 'from-blue-600 to-blue-400' },
+  { value: 'youtube', label: 'YouTube', icon: Youtube, gradient: 'from-red-600 to-red-400' },
+  { value: 'tiktok', label: 'TikTok', icon: Layers, gradient: 'from-stone-900 via-cyan-500 to-pink-500' },
+];
+
+const getPlatformConfig = (platform) => PLATFORMS.find(p => p.value === platform) || PLATFORMS[0];
+
+const PlatformIcon = ({ platform, size = 'w-10 h-10' }) => {
+  const config = getPlatformConfig(platform);
+  const Icon = config.icon;
+  return (
+    <div className={`${size} bg-gradient-to-br ${config.gradient} rounded-2xl flex items-center justify-center text-white`}>
+      <Icon className="w-5 h-5" />
+    </div>
+  );
+};
 import { 
   BarChart, 
   Bar, 
@@ -76,6 +100,33 @@ export default function App() {
   );
 }
 
+function ProfileLinkButton({ username, platform }) {
+  if (!username) return null;
+  
+  const getUrl = () => {
+    switch(platform) {
+      case 'instagram': return `https://www.instagram.com/${username}/`;
+      case 'facebook': return `https://www.facebook.com/${username}`;
+      case 'youtube': return `https://www.youtube.com/@${username}`;
+      case 'tiktok': return `https://www.tiktok.com/@${username}`;
+      default: return `https://www.instagram.com/${username}/`;
+    }
+  };
+
+  return (
+    <a 
+      href={getUrl()} 
+      target="_blank" 
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      title="Open profile" 
+      className="opacity-0 group-hover:opacity-100 p-2 text-stone-300 hover:text-stone-600 transition-all"
+    >
+      <ExternalLink className="w-4 h-4" />
+    </a>
+  );
+}
+
 function InstaTrackApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -84,12 +135,21 @@ function InstaTrackApp() {
   const [accounts, setAccounts] = useState([]);
   const [posts, setPosts] = useState([]);
   const [newAccountUsername, setNewAccountUsername] = useState('');
+  const [newAccountName, setNewAccountName] = useState('');
   const [newAccountOwnerName, setNewAccountOwnerName] = useState('');
+  const [newAccountPlatform, setNewAccountPlatform] = useState('instagram');
   const [newProjectName, setNewProjectName] = useState('');
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isAddingAccount, setIsAddingAccount] = useState(false);
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  const [handlers, setHandlers] = useState([]);
+  const [newHandlerName, setNewHandlerName] = useState('');
+  const [newHandlerId, setNewHandlerId] = useState('');
+  const [newAccountHandlerId, setNewAccountHandlerId] = useState('');
+  const [isAddingHandler, setIsAddingHandler] = useState(false);
+  const [isHandlerDropdownOpen, setIsHandlerDropdownOpen] = useState(false);
+  const [selectedFilterHandlerId, setSelectedFilterHandlerId] = useState('all');
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -111,15 +171,17 @@ function InstaTrackApp() {
   const fetchData = async () => {
     try {
       setError(null);
-      const [projs, accs, psts] = await Promise.all([
+      const [projs, accs, psts, hndlrs] = await Promise.all([
         api.getProjects(),
         api.getAccounts(),
-        api.getPosts()
+        api.getPosts(),
+        api.getHandlers()
       ]);
       
       setProjects(Array.isArray(projs) ? projs : []);
       setAccounts(Array.isArray(accs) ? accs : []);
       setPosts(Array.isArray(psts) ? psts : []);
+      setHandlers(Array.isArray(hndlrs) ? hndlrs : []);
       
       const activeProjs = Array.isArray(projs) ? projs : [];
       if (activeProjs.length > 0 && !selectedProjectId) {
@@ -172,18 +234,55 @@ function InstaTrackApp() {
     });
   };
 
+  const addHandler = async (e) => {
+    e.preventDefault();
+    if (!newHandlerName.trim() || !newHandlerId.trim()) return;
+    try {
+      const newHndlr = await api.addHandler(newHandlerName.trim(), newHandlerId.trim());
+      setHandlers([...handlers, newHndlr]);
+      setNewHandlerName('');
+      setNewHandlerId('');
+      setIsAddingHandler(false);
+    } catch (error) {
+      handleAppError(error);
+    }
+  };
+
+  const deleteHandler = async (id) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Handler',
+      message: 'Are you sure? This will not delete their accounts, but they will be unassigned.',
+      onConfirm: async () => {
+        try {
+          await api.deleteHandler(id);
+          setHandlers(handlers.filter(h => (h.id || h._id) !== id));
+          setAccounts(accounts.map(a => a.handlerId === id ? { ...a, handlerId: null } : a));
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+          handleAppError(error);
+        }
+      }
+    });
+  };
+
   const addAccount = async (e) => {
     e.preventDefault();
-    if (!newAccountUsername.trim() || !newAccountOwnerName.trim() || !selectedProjectId) return;
+    if (!newAccountUsername.trim() || !newAccountOwnerName.trim() || !selectedProjectId || !newAccountHandlerId) return;
     try {
       const newAcc = await api.addAccount({
         username: newAccountUsername.trim().replace(/^@/, ''),
+        name: newAccountName.trim(),
         ownerName: newAccountOwnerName.trim(),
+        platform: newAccountPlatform,
         projectId: selectedProjectId,
+        handlerId: newAccountHandlerId,
       });
       setAccounts([...accounts, newAcc]);
       setNewAccountUsername('');
+      setNewAccountName('');
       setNewAccountOwnerName('');
+      setNewAccountPlatform('instagram');
       setIsAddingAccount(false);
     } catch (error) {
       handleAppError(error);
@@ -241,7 +340,7 @@ function InstaTrackApp() {
         accountId: postModal.accountId,
         date: postModal.date,
         index: postModal.index,
-        link: getInstagramId(postModal.link),
+        link: postModal.link.trim(),
       });
       setPosts(prev => {
         const index = prev.findIndex(p => p.accountId === savedPost.accountId && p.date === savedPost.date && p.index === savedPost.index);
@@ -273,15 +372,30 @@ function InstaTrackApp() {
     return (match && match[2]) ? match[2] : trimmed;
   };
 
-  const getFullUrl = (id) => {
+  const getFullUrl = (id, platform) => {
     if (!id) return '#';
-    if (id.startsWith('http')) return id;
-    return `https://www.instagram.com/reels/${id}/`;
+    const trimmed = id.trim();
+    if (trimmed.startsWith('http')) return trimmed;
+    if (platform === 'youtube') return `https://www.youtube.com/shorts/${trimmed}`;
+    return `https://www.instagram.com/reels/${trimmed}/`;
   };
 
-  const filteredAccounts = useMemo(() => 
-    accounts.filter(a => (a.projectId || a.projectId?._id) === selectedProjectId),
-  [accounts, selectedProjectId]);
+  const filteredAccounts = useMemo(() => {
+    if (!selectedProjectId) return [];
+    let accs = accounts.filter(a => a.projectId === selectedProjectId);
+    if (selectedFilterHandlerId !== 'all') {
+      if (selectedFilterHandlerId === 'unassigned') {
+        accs = accs.filter(a => !a.handlerId);
+      } else {
+        accs = accs.filter(a => a.handlerId === selectedFilterHandlerId);
+      }
+    }
+    return accs;
+  }, [accounts, selectedProjectId, selectedFilterHandlerId]);
+
+  const filteredHandlers = useMemo(() => {
+    return handlers;
+  }, [handlers]);
 
   const statsData = useMemo(() => {
     const last7Days = eachDayOfInterval({
@@ -495,6 +609,7 @@ function InstaTrackApp() {
                 )}
               </AnimatePresence>
             </div>
+
           </div>
           <div className="hidden sm:block text-sm text-stone-400 font-medium tracking-tight">MERN Activity Tracker</div>
         </div>
@@ -512,7 +627,7 @@ function InstaTrackApp() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                       <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#a8a29e' }} />
                       <YAxis hide />
-                      <Tooltip cursor={{ fill: '#f5f5f4' }} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                      <Tooltip cursor={{ fill: '#f5f5f4' }} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 100 0 / 0.1)' }} />
                       <Bar dataKey="count" radius={[6, 6, 0, 0]}>
                         {statsData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.count >= entry.target && entry.target > 0 ? '#10b981' : '#1c1917'} />)}
                       </Bar>
@@ -523,13 +638,13 @@ function InstaTrackApp() {
 
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-stone-900 text-white p-8 rounded-[32px] shadow-lg flex flex-col justify-between">
                 <div>
-                  <p className="text-stone-400 text-sm font-medium mb-1">Total Video Posts Today</p>
-                  <h3 className="text-5xl font-bold tracking-tight mb-2">{todayStats.count.toLocaleString()}</h3>
-                  <p className="text-stone-400 text-xs mt-4 mb-1 uppercase tracking-widest font-bold">Post Goal Progress</p>
+                  <p className="text-stone-400 text-sm font-medium mb-1">Posts Remaining Today</p>
+                  <h3 className="text-5xl font-bold tracking-tight mb-2">{Math.max(0, todayStats.target - todayStats.count).toLocaleString()}</h3>
+                  <p className="text-stone-400 text-xs mt-4 mb-1 uppercase tracking-widest font-bold">Daily Progress</p>
                   <div className="w-full bg-stone-800 h-2 rounded-full overflow-hidden mb-2">
                     <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, (todayStats.count / (todayStats.target || 1)) * 100)}%` }} className="h-full bg-emerald-500" />
                   </div>
-                  <p className="text-xs text-stone-500">{todayStats.count} / {todayStats.target} posts uploaded</p>
+                  <p className="text-xs text-stone-500">{todayStats.count} of {todayStats.target} completed</p>
                 </div>
                 <div className="pt-6 border-t border-stone-800 flex justify-between items-end">
                   <div>
@@ -551,17 +666,118 @@ function InstaTrackApp() {
                 </div>
               </div>
 
+              {/* Handler Filter Tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2">
+                <button
+                  onClick={() => setSelectedFilterHandlerId('all')}
+                  className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    selectedFilterHandlerId === 'all'
+                      ? 'bg-stone-900 text-white shadow-md'
+                      : 'bg-white text-stone-500 hover:bg-stone-100 hover:text-stone-900 border border-stone-200'
+                  }`}
+                >
+                  All
+                  {(() => {
+                    const projAccounts = accounts.filter(a => a.projectId === selectedProjectId);
+                    const projAccIds = projAccounts.map(a => a.id || a._id);
+                    const completedCount = posts.filter(p => p.date === selectedDate && projAccIds.includes(p.accountId)).length;
+                    const pendingCount = (projAccounts.length * 3) - completedCount;
+                    if (pendingCount <= 0) return null;
+                    return (
+                      <span className={`px-1.5 py-0.5 rounded-full text-[9px] bg-red-500 text-white animate-pulse ml-1.5`}>
+                        {pendingCount}
+                      </span>
+                    );
+                  })()}
+                </button>
+                {filteredHandlers.length > 0 && (
+                  <div className="w-px h-6 bg-stone-200 mx-2 shrink-0 rounded-full" />
+                )}
+                {filteredHandlers.map(h => {
+                  const id = h.id || h._id;
+                  const isSelected = selectedFilterHandlerId === id;
+                  const handlerAccounts = accounts.filter(a => a.projectId === selectedProjectId && a.handlerId === id);
+                  const handlerAccIds = handlerAccounts.map(a => a.id || a._id);
+                  const completedCount = posts.filter(p => p.date === selectedDate && handlerAccIds.includes(p.accountId)).length;
+                  const pendingCount = (handlerAccounts.length * 3) - completedCount;
+                  
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setSelectedFilterHandlerId(id)}
+                      className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 group ${
+                        isSelected
+                          ? 'bg-stone-900 text-white shadow-md'
+                          : 'bg-white text-stone-500 hover:bg-stone-100 hover:text-stone-900 border border-stone-200'
+                      }`}
+                    >
+                      {h.name}
+                      <div className="flex items-center gap-1">
+                        {pendingCount > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-red-500 text-white">
+                            {pendingCount}
+                          </span>
+                        )}
+                        {isSelected && (
+                          <div className="flex items-center gap-0.5 ml-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const url = `${window.location.origin}/?h=${h.handleId}`;
+                                navigator.clipboard.writeText(url).then(() => {
+                                  alert(`Link copied for ${h.name}!`);
+                                });
+                              }}
+                              className="p-1 hover:text-emerald-400 transition-colors text-white/40"
+                              title="Copy handler link"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Delete handler "${h.name}"?`)) deleteHandler(id);
+                              }}
+                              className="p-1 hover:text-red-400 transition-colors text-white/40"
+                              title="Delete handler"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {/* Quick Add Handler Button */}
+                <div className="flex items-center ml-2 border-l border-stone-200 pl-2">
+                  <button onClick={() => setIsAddingHandler(true)} className="shrink-0 w-10 h-10 bg-stone-900 text-white rounded-xl flex items-center justify-center hover:bg-stone-800 transition-all shadow-md group" title="Add Handler">
+                    <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredAccounts.map((acc) => (
                   <motion.div key={acc.id || acc._id} layout className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 group">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-stone-100 rounded-full flex items-center justify-center text-stone-600 font-bold text-xs">@</div>
+                        <PlatformIcon platform={acc.platform} />
                         <div className="flex flex-col cursor-pointer hover:opacity-70 transition-opacity" onClick={() => viewAccountHistory(acc)}>
-                          <span className="font-bold text-stone-900 tracking-tight">@{acc.username}</span>
-                          <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">{acc.ownerName}</span>
+                          <span className="font-bold text-stone-900 tracking-tight">{acc.name || `@${acc.username}`}</span>
+                          <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">
+                            {(() => {
+                              const handlerName = acc.handlerId ? handlers.find(h => (h.id || h._id) === acc.handlerId)?.name : null;
+                              if (handlerName && handlerName.toLowerCase() === acc.ownerName.toLowerCase()) {
+                                return handlerName;
+                              }
+                              return `${acc.ownerName}${handlerName ? ` • Handler: ${handlerName}` : ''}`;
+                            })()}
+                          </span>
                         </div>
                       </div>
+                      <ProfileLinkButton username={acc.username} platform={acc.platform} />
                       <button onClick={() => deleteAccount(acc.id || acc._id)} className="opacity-0 group-hover:opacity-100 p-2 text-stone-300 hover:text-red-500 transition-all"><Trash2 className="w-4 h-4" /></button>
                     </div>
                     <div className="flex gap-2">
@@ -574,6 +790,18 @@ function InstaTrackApp() {
                             </button>
                             {post && (
                               <div className="flex flex-col items-center gap-0.5">
+                                {post.link && (
+                                  <a 
+                                    href={getFullUrl(post.link, acc.platform)} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1 text-stone-400 hover:text-stone-900 transition-colors"
+                                    title="View post"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
                                 <span className="text-[9px] font-bold text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
                                   <Eye className="w-2.5 h-2.5" /> {(post.viewsCount || 0).toLocaleString()}
                                 </span>
@@ -590,7 +818,17 @@ function InstaTrackApp() {
                     </div>
                   </motion.div>
                 ))}
-                <button onClick={() => setIsAddingAccount(true)} className="bg-stone-50 border-2 border-dashed border-stone-200 p-6 rounded-3xl flex flex-col items-center justify-center gap-2 text-stone-400 hover:text-stone-600 hover:border-stone-300 transition-all">
+                <button onClick={() => {
+                  setIsAddingAccount(true);
+                  if (selectedFilterHandlerId !== 'all' && selectedFilterHandlerId !== 'unassigned') {
+                    setNewAccountHandlerId(selectedFilterHandlerId);
+                    const hName = handlers.find(h => (h.id || h._id) === selectedFilterHandlerId)?.name || '';
+                    setNewAccountOwnerName(hName);
+                  } else {
+                    setNewAccountHandlerId('');
+                    setNewAccountOwnerName('');
+                  }
+                }} className="bg-stone-50 border-2 border-dashed border-stone-200 p-6 rounded-3xl flex flex-col items-center justify-center gap-2 text-stone-400 hover:text-stone-600 hover:border-stone-300 transition-all">
                   <Plus className="w-6 h-6" />
                   <span className="text-sm font-bold">Add Account</span>
                 </button>
@@ -607,6 +845,34 @@ function InstaTrackApp() {
         )}
       </main>
 
+      {/* Modals */}
+      <AnimatePresence>
+        {isAddingHandler && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAddingHandler(false)} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-sm bg-white rounded-[32px] p-8 shadow-2xl border border-stone-200">
+              <h3 className="text-2xl font-bold tracking-tight mb-2">New Handler</h3>
+              <p className="text-stone-500 text-sm mb-6">Create a personalized handler to manage specific accounts.</p>
+              <form onSubmit={addHandler} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Handler Name</label>
+                  <input autoFocus type="text" value={newHandlerName} onChange={e => setNewHandlerName(e.target.value)} placeholder="e.g. John" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Handle ID (Unique Access Link)</label>
+                  <input type="text" value={newHandlerId} onChange={e => setNewHandlerId(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''))} placeholder="e.g. john123" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm font-mono" />
+                  <p className="text-[9px] text-stone-400 ml-1">Example: john-tracker</p>
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setIsAddingHandler(false)} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
+                  <button type="submit" disabled={!newHandlerName.trim() || !newHandlerId.trim()} className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all disabled:opacity-50">Create Handler</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {isAddingAccount && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -615,16 +881,65 @@ function InstaTrackApp() {
               <h3 className="text-2xl font-bold tracking-tight mb-6">Add Account</h3>
               <form onSubmit={addAccount} className="space-y-4">
                 <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Platform</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {PLATFORMS.map(p => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setNewAccountPlatform(p.value)}
+                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-xs font-medium ${
+                          newAccountPlatform === p.value
+                            ? 'border-stone-900 bg-stone-50'
+                            : 'border-stone-100 hover:border-stone-200'
+                        }`}
+                      >
+                        <PlatformIcon platform={p.value} size="w-8 h-8" />
+                        <span className="text-[9px] text-stone-500 font-bold uppercase tracking-wider">{p.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Username</label>
                   <input autoFocus type="text" value={newAccountUsername} onChange={e => setNewAccountUsername(e.target.value)} placeholder="@username" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Owner Name</label>
-                  <input type="text" value={newAccountOwnerName} onChange={e => setNewAccountOwnerName(e.target.value)} placeholder="Full Name" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Account Name (Optional)</label>
+                  <input type="text" value={newAccountName} onChange={e => setNewAccountName(e.target.value)} placeholder="e.g. My Personal Account" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
                 </div>
+
+                {/* Hide these when a specific handler is already selected in tabs */}
+                {(selectedFilterHandlerId === 'all' || selectedFilterHandlerId === 'unassigned') && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Owner Name</label>
+                      <input type="text" value={newAccountOwnerName} onChange={e => setNewAccountOwnerName(e.target.value)} placeholder="Full Name" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Assign Handler</label>
+                      {filteredHandlers.length > 0 ? (
+                        <select 
+                          value={newAccountHandlerId} 
+                          onChange={e => setNewAccountHandlerId(e.target.value)} 
+                          className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm appearance-none cursor-pointer"
+                        >
+                          <option value="" disabled>Select a handler...</option>
+                          {filteredHandlers.map(h => (
+                            <option key={h.id || h._id} value={h.id || h._id}>{h.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="bg-orange-50 text-orange-600 p-3 rounded-xl text-xs flex items-center gap-2">
+                           <AlertCircle className="w-4 h-4" /> Please create a Handler first.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
                 <div className="flex gap-3 pt-4">
                   <button type="button" onClick={() => setIsAddingAccount(false)} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
-                  <button type="submit" className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all">Add Account</button>
+                  <button type="submit" disabled={!newAccountHandlerId || !newAccountUsername || !newAccountOwnerName} className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all disabled:opacity-50">Save</button>
                 </div>
               </form>
             </motion.div>
