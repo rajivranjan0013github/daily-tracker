@@ -571,10 +571,12 @@ function InstaTrackApp() {
       <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-stone-200">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-stone-900 rounded-xl flex items-center justify-center"><Layers className="w-6 h-6 text-white" /></div>
-              <h1 className="text-xl font-bold tracking-tight hidden sm:block">InstaTrack</h1>
+            <div className="flex items-center gap-3 w-[200px]">
+            <div className="w-8 h-8 bg-stone-900 rounded-lg flex items-center justify-center shadow-md">
+              <Layers className="w-4 h-4 text-white" />
             </div>
+            <div className="hidden sm:block text-sm text-stone-400 font-medium tracking-tight">TW</div>
+          </div>
             <div className="relative">
               <button onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)} className="flex items-center gap-2 px-4 py-2 bg-stone-50 hover:bg-stone-100 rounded-xl transition-all border border-stone-200">
                 <span className="text-sm font-medium text-stone-900">{projects.find(p => (p.id || p._id) === selectedProjectId)?.name || 'Select Project'}</span>

@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['pwa-192.png', 'pwa-512.png'],
       manifest: {
-        name: 'DailyTracker',
-        short_name: 'Tracker',
+        name: 'TW',
+        short_name: 'TW',
         description: 'Track your daily social media activities efficiently.',
         theme_color: '#000000',
         background_color: '#ffffff',

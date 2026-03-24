@@ -179,7 +179,7 @@ app.get('/api/accounts/handler/:handleId', async (req, res) => {
       return res.status(404).json({ error: 'Handler not found. Invalid link.' });
     }
     const accounts = await Account.find({ handlerId: handler._id, uid: 'default_user' });
-    res.json(accounts);
+    res.json({ handler: { name: handler.name }, accounts });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

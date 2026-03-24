@@ -41,9 +41,12 @@ export default function UpdatePage() {
   const [error, setError] = useState(null);
   const [postModal, setPostModal] = useState({ isOpen: false, accId: '', index: 0, link: '', saving: false });
   const [inputId, setInputId] = useState('');
+  const [handlerName, setHandlerName] = useState('');
   const [deferredPrompt, setDeferredPrompt] = useState(null);
 
-  const handlerId = new URLSearchParams(window.location.search).get('h');
+  const urlHandlerId = new URLSearchParams(window.location.search).get('h');
+  const savedHandlerId = localStorage.getItem('handlerId');
+  const handlerId = urlHandlerId || savedHandlerId;
   const today = format(new Date(), 'yyyy-MM-dd');
   const todayDisplay = format(new Date(), 'dd MMM, EEEE');
 
@@ -56,7 +59,12 @@ export default function UpdatePage() {
       try {
         const res = await fetch(`${API_BASE_URL}/accounts/handler/${handlerId}`);
         if (!res.ok) throw new Error("Failed to load your accounts. Invalid handler link.");
-        const handlerAccounts = await res.json();
+        const data = await res.json();
+        
+        const handlerAccounts = Array.isArray(data) ? data : data.accounts;
+        if (!Array.isArray(data) && data.handler?.name) {
+          setHandlerName(data.handler.name);
+        }
         
         const accsWithPosts = await Promise.all(handlerAccounts.map(async (account) => {
           const accId = account._id || account.id;
@@ -69,6 +77,10 @@ export default function UpdatePage() {
       finally { setLoading(false); }
     };
     loadAll();
+
+    if (urlHandlerId) {
+      localStorage.setItem('handlerId', urlHandlerId);
+    }
 
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -173,7 +185,7 @@ export default function UpdatePage() {
             <div className="w-10 h-10 bg-stone-900 rounded-xl flex items-center justify-center">
               <Layers className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight">Activity Tracker</h1>
+            <h1 className="text-xl font-bold tracking-tight">TW</h1>
           </div>
           {deferredPrompt && (
             <button 
@@ -181,6 +193,17 @@ export default function UpdatePage() {
               className="ml-auto flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all animate-bounce"
             >
               <Download className="w-4 h-4" /> Install App
+            </button>
+          )}
+          {handlerId && (
+            <button 
+              onClick={() => {
+                localStorage.removeItem('handlerId');
+                window.location.href = '/';
+              }}
+              className="ml-2 flex items-center gap-2 px-3 py-2 bg-stone-100 text-stone-600 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all"
+            >
+              Log Out
             </button>
           )}
         </header>
@@ -234,14 +257,18 @@ export default function UpdatePage() {
             <div className="w-10 h-10 bg-stone-900 rounded-xl flex items-center justify-center">
               <Layers className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight">Activity Tracker</h1>
+            <h1 className="text-xl font-bold tracking-tight">TW</h1>
           </div>
         </header>
         <main className="flex-1 flex items-center justify-center px-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center w-full max-w-sm">
             <div className="w-16 h-16 bg-stone-100 rounded-2xl flex items-center justify-center mx-auto mb-6"><Layers className="w-8 h-8 text-stone-400" /></div>
-            <h2 className="text-2xl font-bold tracking-tight mb-2">No Accounts Assigned</h2>
-            <p className="text-stone-500 mb-8 leading-relaxed">You currently have no accounts to track. An admin must assign them to you.</p>
+            <h2 className="text-2xl font-bold tracking-tight mb-2">
+              {handlerName ? `Hi, ${handlerName}!` : 'No Accounts Assigned'}
+            </h2>
+            <p className="text-stone-500 mb-8 leading-relaxed">
+              {handlerName ? "You currently have no accounts to track. An admin must assign them to you." : "An admin must assign accounts to you."}
+            </p>
           </motion.div>
         </main>
       </div>
@@ -296,7 +323,7 @@ export default function UpdatePage() {
             <div className="w-10 h-10 bg-stone-900 rounded-xl flex items-center justify-center">
               <Layers className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight">Activity Tracker</h1>
+            <h1 className="text-xl font-bold tracking-tight">TW</h1>
           </div>
           {deferredPrompt && (
             <button 
@@ -306,13 +333,25 @@ export default function UpdatePage() {
               <Download className="w-4 h-4" /> Install App
             </button>
           )}
+          {handlerId && (
+            <button 
+              onClick={() => {
+                localStorage.removeItem('handlerId');
+                window.location.href = '/';
+              }}
+              className="ml-2 flex items-center gap-2 px-3 py-2 bg-stone-100 text-stone-600 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all"
+            >
+              Log Out
+            </button>
+          )}
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         <div className="space-y-4 mb-2">
+          {handlerName && <h2 className="text-3xl font-bold text-stone-900 tracking-tight leading-tight mb-2">Hello, {handlerName}!</h2>}
           <div className="flex items-end justify-between">
-            <h2 className="text-2xl font-bold text-stone-900 tracking-tight">{todayDisplay}</h2>
+            <h3 className="text-xl font-bold text-stone-900 tracking-tight">{todayDisplay}</h3>
             <div className="bg-white px-4 py-2 rounded-2xl border border-stone-200 shadow-sm">
               <span className="text-xl font-bold text-stone-900">{totalCompleted}</span>
               <span className="text-stone-400 font-medium mx-1">/</span>
