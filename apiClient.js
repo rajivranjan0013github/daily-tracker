@@ -62,6 +62,14 @@ export const api = {
     });
     return handleResponse(res);
   },
+  async updateAccount(id, data) {
+    const res = await fetch(`${API_BASE_URL}/accounts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
   async deleteAccount(id) {
     const res = await fetch(`${API_BASE_URL}/accounts/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error(`Failed to delete account: ${res.status}`);

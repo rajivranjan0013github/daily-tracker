@@ -12,6 +12,9 @@ import {
   Facebook,
   Youtube,
   Download,
+  ExternalLink,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -42,6 +45,7 @@ export default function UpdatePage() {
   const [postModal, setPostModal] = useState({ isOpen: false, accId: '', index: 0, link: '', saving: false });
   const [inputId, setInputId] = useState('');
   const [handlerName, setHandlerName] = useState('');
+  const [copiedAccountId, setCopiedAccountId] = useState(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
 
   const urlHandlerId = new URLSearchParams(window.location.search).get('h');
@@ -60,12 +64,12 @@ export default function UpdatePage() {
         const res = await fetch(`${API_BASE_URL}/accounts/handler/${handlerId}`);
         if (!res.ok) throw new Error("Failed to load your accounts. Invalid handler link.");
         const data = await res.json();
-        
+
         const handlerAccounts = Array.isArray(data) ? data : data.accounts;
         if (!Array.isArray(data) && data.handler?.name) {
           setHandlerName(data.handler.name);
         }
-        
+
         const accsWithPosts = await Promise.all(handlerAccounts.map(async (account) => {
           const accId = account._id || account.id;
           const postsRes = await fetch(`${API_BASE_URL}/posts/${accId}/${today}`);
@@ -88,7 +92,7 @@ export default function UpdatePage() {
     });
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', () => {});
+      window.removeEventListener('beforeinstallprompt', () => { });
     };
   }, [handlerId, today]);
 
@@ -188,7 +192,7 @@ export default function UpdatePage() {
             <h1 className="text-xl font-bold tracking-tight">TW</h1>
           </div>
           {deferredPrompt && (
-            <button 
+            <button
               onClick={handleInstallClick}
               className="ml-auto flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all animate-bounce"
             >
@@ -196,7 +200,7 @@ export default function UpdatePage() {
             </button>
           )}
           {handlerId && (
-            <button 
+            <button
               onClick={() => {
                 localStorage.removeItem('handlerId');
                 window.location.href = '/';
@@ -214,19 +218,19 @@ export default function UpdatePage() {
             </div>
             <h2 className="text-2xl font-bold tracking-tight mb-2">Welcome Back</h2>
             <p className="text-stone-500 text-sm mb-8 leading-relaxed">Enter your Handle ID to access your assigned tracking accounts.</p>
-            
+
             <form onSubmit={(e) => { e.preventDefault(); if (inputId.trim()) window.location.search = `?h=${inputId.trim()}`; }} className="space-y-4">
-              <input 
-                autoFocus 
-                type="text" 
-                value={inputId} 
-                onChange={(e) => setInputId(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''))} 
-                placeholder="Enter Handle ID..." 
+              <input
+                autoFocus
+                type="text"
+                value={inputId}
+                onChange={(e) => setInputId(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''))}
+                placeholder="Enter Handle ID..."
                 className="w-full bg-stone-50 p-4 rounded-xl border border-stone-200 focus:ring-2 focus:ring-stone-900 outline-none text-center font-bold tracking-tight"
               />
-              <button 
-                type="submit" 
-                disabled={!inputId.trim()} 
+              <button
+                type="submit"
+                disabled={!inputId.trim()}
                 className="w-full px-4 py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 shadow-md transition-all disabled:opacity-50"
               >
                 Access Dashboard
@@ -292,13 +296,13 @@ export default function UpdatePage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Video Link</label>
                   <div className="relative">
-                    <input 
-                      autoFocus 
-                      type="text" 
-                      placeholder="https://.../video/..." 
-                      value={postModal.link} 
-                      onChange={(e) => setPostModal({ ...postModal, link: e.target.value })} 
-                      className="w-full bg-stone-50 p-3 pr-12 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" 
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="https://.../video/..."
+                      value={postModal.link}
+                      onChange={(e) => setPostModal({ ...postModal, link: e.target.value })}
+                      className="w-full bg-stone-50 p-3 pr-12 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm"
                     />
                     <button type="button" onClick={handlePaste} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-stone-400 hover:text-stone-900 transition-colors" title="Paste from clipboard">
                       <ClipboardPaste className="w-4 h-4" />
@@ -326,7 +330,7 @@ export default function UpdatePage() {
             <h1 className="text-xl font-bold tracking-tight">TW</h1>
           </div>
           {deferredPrompt && (
-            <button 
+            <button
               onClick={handleInstallClick}
               className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all"
             >
@@ -334,7 +338,7 @@ export default function UpdatePage() {
             </button>
           )}
           {handlerId && (
-            <button 
+            <button
               onClick={() => {
                 localStorage.removeItem('handlerId');
                 window.location.href = '/';
@@ -359,7 +363,7 @@ export default function UpdatePage() {
               <span className="ml-2 text-[10px] font-bold text-stone-400 uppercase tracking-widest">Posted</span>
             </div>
           </div>
-          
+
           <div className="w-full bg-stone-200 h-2 rounded-full overflow-hidden shadow-inner">
             <motion.div
               initial={{ width: 0 }}
@@ -408,9 +412,8 @@ export default function UpdatePage() {
                       <div key={i} className="flex flex-col items-center gap-1.5">
                         <button
                           onClick={() => handleCheckboxClick(accId, i)}
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                            post ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200' : 'bg-stone-50 text-stone-300 hover:bg-stone-100'
-                          }`}
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${post ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200' : 'bg-stone-50 text-stone-300 hover:bg-stone-100'
+                            }`}
                         >
                           {post ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
                         </button>
@@ -422,6 +425,39 @@ export default function UpdatePage() {
                       </div>
                     );
                   })}
+                </div>
+                <div className="flex gap-2 mt-3">
+                  {accData.account.assetsLink && (
+                    <a
+                      href={accData.account.assetsLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 text-amber-700 rounded-2xl text-xs font-bold hover:bg-amber-100 transition-all border border-amber-200"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" /> Assets
+                    </a>
+                  )}
+                  {accData.account.description && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(accData.account.description).then(() => {
+                          setCopiedAccountId(accId);
+                          setTimeout(() => setCopiedAccountId(null), 2000);
+                        });
+                      }}
+                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border ${
+                        copiedAccountId === accId
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                      }`}
+                    >
+                      {copiedAccountId === accId ? (
+                        <><Check className="w-3.5 h-3.5" /> Copied!</>
+                      ) : (
+                        <><Copy className="w-3.5 h-3.5" /> Copy</>
+                      )}
+                    </button>
+                  )}
                 </div>
               </motion.div>
             );

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, Component } from 'react';
 import { format, startOfToday, subDays, eachDayOfInterval } from 'date-fns';
-import { 
-  Plus, 
-  Trash2, 
-  CheckCircle2, 
-  Circle, 
-  Instagram, 
-  BarChart3, 
+import {
+  Plus,
+  Trash2,
+  CheckCircle2,
+  Circle,
+  Instagram,
+  BarChart3,
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +20,7 @@ import {
   Facebook,
   Youtube,
   ExternalLink,
+  Pencil,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -41,13 +42,13 @@ const PlatformIcon = ({ platform, size = 'w-10 h-10' }) => {
     </div>
   );
 };
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   Cell
 } from 'recharts';
@@ -78,7 +79,7 @@ class ErrorBoundary extends Component {
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-bold tracking-tight text-stone-900 mb-2">Application Error</h2>
             <p className="text-stone-600 mb-6">{this.state.error?.message || "Something went wrong."}</p>
-            <button 
+            <button
               onClick={() => window.location.reload()}
               className="px-6 py-2 bg-stone-900 text-white rounded-xl hover:bg-stone-800 transition-colors"
             >
@@ -102,9 +103,9 @@ export default function App() {
 
 function ProfileLinkButton({ username, platform }) {
   if (!username) return null;
-  
+
   const getUrl = () => {
-    switch(platform) {
+    switch (platform) {
       case 'instagram': return `https://www.instagram.com/${username}/`;
       case 'facebook': return `https://www.facebook.com/${username}`;
       case 'youtube': return `https://www.youtube.com/@${username}`;
@@ -114,12 +115,12 @@ function ProfileLinkButton({ username, platform }) {
   };
 
   return (
-    <a 
-      href={getUrl()} 
-      target="_blank" 
+    <a
+      href={getUrl()}
+      target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
-      title="Open profile" 
+      title="Open profile"
       className="opacity-0 group-hover:opacity-100 p-2 text-stone-300 hover:text-stone-600 transition-all"
     >
       <ExternalLink className="w-4 h-4" />
@@ -138,6 +139,9 @@ function InstaTrackApp() {
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountOwnerName, setNewAccountOwnerName] = useState('');
   const [newAccountPlatform, setNewAccountPlatform] = useState('instagram');
+  const [newAccountAssetsLink, setNewAccountAssetsLink] = useState('');
+  const [newAccountDescription, setNewAccountDescription] = useState('');
+  const [copiedAccountId, setCopiedAccountId] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [isAddingAccount, setIsAddingAccount] = useState(false);
@@ -154,7 +158,7 @@ function InstaTrackApp() {
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
   const [postModal, setPostModal] = useState({
     isOpen: false,
@@ -167,6 +171,17 @@ function InstaTrackApp() {
     isOpen: false,
     account: null,
   });
+  const [editModal, setEditModal] = useState({
+    isOpen: false,
+    account: null,
+    username: '',
+    name: '',
+    ownerName: '',
+    platform: 'instagram',
+    handlerId: '',
+    assetsLink: '',
+    description: '',
+  });
 
   const fetchData = async () => {
     try {
@@ -177,12 +192,12 @@ function InstaTrackApp() {
         api.getPosts(),
         api.getHandlers()
       ]);
-      
+
       setProjects(Array.isArray(projs) ? projs : []);
       setAccounts(Array.isArray(accs) ? accs : []);
       setPosts(Array.isArray(psts) ? psts : []);
       setHandlers(Array.isArray(hndlrs) ? hndlrs : []);
-      
+
       const activeProjs = Array.isArray(projs) ? projs : [];
       if (activeProjs.length > 0 && !selectedProjectId) {
         setSelectedProjectId(activeProjs[0].id || activeProjs[0]._id);
@@ -277,13 +292,52 @@ function InstaTrackApp() {
         platform: newAccountPlatform,
         projectId: selectedProjectId,
         handlerId: newAccountHandlerId,
+        assetsLink: newAccountAssetsLink.trim(),
+        description: newAccountDescription.trim(),
       });
       setAccounts([...accounts, newAcc]);
       setNewAccountUsername('');
       setNewAccountName('');
       setNewAccountOwnerName('');
       setNewAccountPlatform('instagram');
+      setNewAccountAssetsLink('');
+      setNewAccountDescription('');
       setIsAddingAccount(false);
+    } catch (error) {
+      handleAppError(error);
+    }
+  };
+
+  const openEditModal = (acc) => {
+    setEditModal({
+      isOpen: true,
+      account: acc,
+      username: acc.username || '',
+      name: acc.name || '',
+      ownerName: acc.ownerName || '',
+      platform: acc.platform || 'instagram',
+      handlerId: acc.handlerId || '',
+      assetsLink: acc.assetsLink || '',
+      description: acc.description || '',
+    });
+  };
+
+  const submitEditAccount = async (e) => {
+    e.preventDefault();
+    if (!editModal.account) return;
+    const accId = editModal.account.id || editModal.account._id;
+    try {
+      const updated = await api.updateAccount(accId, {
+        username: editModal.username.trim().replace(/^@/, ''),
+        name: editModal.name.trim(),
+        ownerName: editModal.ownerName.trim(),
+        platform: editModal.platform,
+        handlerId: editModal.handlerId || undefined,
+        assetsLink: editModal.assetsLink.trim(),
+        description: editModal.description.trim(),
+      });
+      setAccounts(accounts.map(a => (a.id || a._id) === accId ? updated : a));
+      setEditModal(prev => ({ ...prev, isOpen: false }));
     } catch (error) {
       handleAppError(error);
     }
@@ -442,7 +496,7 @@ function InstaTrackApp() {
       {/* Error Alert */}
       <AnimatePresence>
         {error && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
@@ -479,7 +533,7 @@ function InstaTrackApp() {
           </div>
         )}
       </AnimatePresence>
-      
+
       {/* Post Submission Modal */}
       <AnimatePresence>
         {postModal.isOpen && (
@@ -489,11 +543,11 @@ function InstaTrackApp() {
               <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6"><Plus className="w-6 h-6 text-emerald-500" /></div>
               <h3 className="text-xl font-bold tracking-tight text-stone-900 mb-2">Video Post #{postModal.index}</h3>
               <p className="text-stone-500 text-sm leading-relaxed mb-6">Enter video details for tracking.</p>
-              
+
               <form onSubmit={submitPost} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Video Link</label>
-                  <input autoFocus type="url" placeholder="https://instagram.com/p/..." value={postModal.link} onChange={(e) => setPostModal({...postModal, link: e.target.value})} className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                  <input autoFocus type="url" placeholder="https://instagram.com/p/..." value={postModal.link} onChange={(e) => setPostModal({ ...postModal, link: e.target.value })} className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
@@ -513,11 +567,11 @@ function InstaTrackApp() {
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-lg bg-white rounded-[32px] p-8 shadow-2xl border border-stone-200 overflow-hidden flex flex-col max-h-[80vh]">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-4">
-                   <div className="w-12 h-12 bg-stone-100 rounded-2xl flex items-center justify-center text-stone-600 font-bold text-sm">@</div>
-                   <div>
-                      <h3 className="text-xl font-bold tracking-tight text-stone-900">@{historyModal.account?.username}</h3>
-                      <p className="text-stone-400 text-xs font-bold uppercase tracking-widest leading-none mt-1">{historyModal.account?.ownerName}'s History</p>
-                   </div>
+                  <div className="w-12 h-12 bg-stone-100 rounded-2xl flex items-center justify-center text-stone-600 font-bold text-sm">@</div>
+                  <div>
+                    <h3 className="text-xl font-bold tracking-tight text-stone-900">@{historyModal.account?.username}</h3>
+                    <p className="text-stone-400 text-xs font-bold uppercase tracking-widest leading-none mt-1">{historyModal.account?.ownerName}'s History</p>
+                  </div>
                 </div>
                 <button onClick={() => setHistoryModal({ ...historyModal, isOpen: false })} className="p-2 hover:bg-stone-50 rounded-xl transition-colors"><Plus className="w-6 h-6 text-stone-400 rotate-45" /></button>
               </div>
@@ -550,8 +604,8 @@ function InstaTrackApp() {
                       </div>
                       <div className="text-right">
                         <div className="flex items-center gap-1.5 justify-end">
-                           <Eye className="w-3 h-3 text-stone-400" />
-                           <span className="text-sm font-bold text-stone-900">{(post.viewsCount || 0).toLocaleString()}</span>
+                          <Eye className="w-3 h-3 text-stone-400" />
+                          <span className="text-sm font-bold text-stone-900">{(post.viewsCount || 0).toLocaleString()}</span>
                         </div>
                         <p className="text-[10px] text-stone-400 uppercase font-bold tracking-widest mt-0.5">Views</p>
                       </div>
@@ -560,8 +614,8 @@ function InstaTrackApp() {
                 )}
               </div>
               <div className="mt-8 pt-6 border-t border-stone-100 flex justify-between items-center text-xs">
-                 <span className="text-stone-400 font-medium">Total Posts: <span className="text-stone-900 font-bold">{accountPosts.length}</span></span>
-                 <span className="text-stone-400 font-medium">Total Views: <span className="text-stone-900 font-bold">{accountPosts.reduce((sum, p) => sum + (p.viewsCount || 0), 0).toLocaleString()}</span></span>
+                <span className="text-stone-400 font-medium">Total Posts: <span className="text-stone-900 font-bold">{accountPosts.length}</span></span>
+                <span className="text-stone-400 font-medium">Total Views: <span className="text-stone-900 font-bold">{accountPosts.reduce((sum, p) => sum + (p.viewsCount || 0), 0).toLocaleString()}</span></span>
               </div>
             </motion.div>
           </div>
@@ -572,11 +626,11 @@ function InstaTrackApp() {
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3 w-[200px]">
-            <div className="w-8 h-8 bg-stone-900 rounded-lg flex items-center justify-center shadow-md">
-              <Layers className="w-4 h-4 text-white" />
+              <div className="w-8 h-8 bg-stone-900 rounded-lg flex items-center justify-center shadow-md">
+                <Layers className="w-4 h-4 text-white" />
+              </div>
+              <div className="hidden sm:block text-sm text-stone-400 font-medium tracking-tight">TW</div>
             </div>
-            <div className="hidden sm:block text-sm text-stone-400 font-medium tracking-tight">TW</div>
-          </div>
             <div className="relative">
               <button onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)} className="flex items-center gap-2 px-4 py-2 bg-stone-50 hover:bg-stone-100 rounded-xl transition-all border border-stone-200">
                 <span className="text-sm font-medium text-stone-900">{projects.find(p => (p.id || p._id) === selectedProjectId)?.name || 'Select Project'}</span>
@@ -672,11 +726,10 @@ function InstaTrackApp() {
               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2">
                 <button
                   onClick={() => setSelectedFilterHandlerId('all')}
-                  className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                    selectedFilterHandlerId === 'all'
+                  className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${selectedFilterHandlerId === 'all'
                       ? 'bg-stone-900 text-white shadow-md'
                       : 'bg-white text-stone-500 hover:bg-stone-100 hover:text-stone-900 border border-stone-200'
-                  }`}
+                    }`}
                 >
                   All
                   {(() => {
@@ -702,16 +755,15 @@ function InstaTrackApp() {
                   const handlerAccIds = handlerAccounts.map(a => a.id || a._id);
                   const completedCount = posts.filter(p => p.date === selectedDate && handlerAccIds.includes(p.accountId)).length;
                   const pendingCount = (handlerAccounts.length * 3) - completedCount;
-                  
+
                   return (
                     <button
                       key={id}
                       onClick={() => setSelectedFilterHandlerId(id)}
-                      className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 group ${
-                        isSelected
+                      className={`shrink-0 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 group ${isSelected
                           ? 'bg-stone-900 text-white shadow-md'
                           : 'bg-white text-stone-500 hover:bg-stone-100 hover:text-stone-900 border border-stone-200'
-                      }`}
+                        }`}
                     >
                       {h.name}
                       <div className="flex items-center gap-1">
@@ -765,7 +817,12 @@ function InstaTrackApp() {
                   <motion.div key={acc.id || acc._id} layout className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 group">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-3">
-                        <PlatformIcon platform={acc.platform} />
+                        <div className="cursor-pointer relative group/icon" onClick={() => openEditModal(acc)} title="Edit account">
+                          <PlatformIcon platform={acc.platform} />
+                          <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-sm border border-stone-200 opacity-0 group-hover/icon:opacity-100 transition-opacity">
+                            <Pencil className="w-2.5 h-2.5 text-stone-500" />
+                          </div>
+                        </div>
                         <div className="flex flex-col cursor-pointer hover:opacity-70 transition-opacity" onClick={() => viewAccountHistory(acc)}>
                           <span className="font-bold text-stone-900 tracking-tight">{acc.name || `@${acc.username}`}</span>
                           <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">
@@ -793,10 +850,10 @@ function InstaTrackApp() {
                             {post && (
                               <div className="flex flex-col items-center gap-0.5">
                                 {post.link && (
-                                  <a 
-                                    href={getFullUrl(post.link, acc.platform)} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
+                                  <a
+                                    href={getFullUrl(post.link, acc.platform)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     onClick={(e) => e.stopPropagation()}
                                     className="p-1 text-stone-400 hover:text-stone-900 transition-colors"
                                     title="View post"
@@ -817,6 +874,39 @@ function InstaTrackApp() {
                           </div>
                         );
                       })}
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      {acc.assetsLink && (
+                        <a
+                          href={acc.assetsLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 text-amber-700 rounded-2xl text-xs font-bold hover:bg-amber-100 transition-all border border-amber-200"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> Assets
+                        </a>
+                      )}
+                      {acc.description && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(acc.description).then(() => {
+                              setCopiedAccountId(acc.id || acc._id);
+                              setTimeout(() => setCopiedAccountId(null), 2000);
+                            });
+                          }}
+                          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border ${
+                            copiedAccountId === (acc.id || acc._id)
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
+                          }`}
+                        >
+                          {copiedAccountId === (acc.id || acc._id) ? (
+                            <><Check className="w-3.5 h-3.5" /> Copied!</>
+                          ) : (
+                            <><Copy className="w-3.5 h-3.5" /> Copy</>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 ))}
@@ -839,10 +929,10 @@ function InstaTrackApp() {
           </>
         ) : (
           <div className="text-center py-20 bg-white rounded-[40px] border border-stone-200 shadow-sm px-6">
-             <div className="w-16 h-16 bg-stone-100 rounded-2xl flex items-center justify-center mx-auto mb-6"><Layers className="w-8 h-8 text-stone-400" /></div>
-             <h2 className="text-2xl font-bold tracking-tight mb-2">No Project Selected</h2>
-             <p className="text-stone-500 max-w-sm mx-auto mb-8">Create a project to start tracking your accounts and daily posts.</p>
-             <button onClick={() => setIsAddingProject(true)} className="px-8 py-3 bg-stone-900 text-white rounded-2xl font-bold tracking-tight hover:bg-stone-800 transition-all shadow-md">Create First Project</button>
+            <div className="w-16 h-16 bg-stone-100 rounded-2xl flex items-center justify-center mx-auto mb-6"><Layers className="w-8 h-8 text-stone-400" /></div>
+            <h2 className="text-2xl font-bold tracking-tight mb-2">No Project Selected</h2>
+            <p className="text-stone-500 max-w-sm mx-auto mb-8">Create a project to start tracking your accounts and daily posts.</p>
+            <button onClick={() => setIsAddingProject(true)} className="px-8 py-3 bg-stone-900 text-white rounded-2xl font-bold tracking-tight hover:bg-stone-800 transition-all shadow-md">Create First Project</button>
           </div>
         )}
       </main>
@@ -890,11 +980,10 @@ function InstaTrackApp() {
                         key={p.value}
                         type="button"
                         onClick={() => setNewAccountPlatform(p.value)}
-                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-xs font-medium ${
-                          newAccountPlatform === p.value
+                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-xs font-medium ${newAccountPlatform === p.value
                             ? 'border-stone-900 bg-stone-50'
                             : 'border-stone-100 hover:border-stone-200'
-                        }`}
+                          }`}
                       >
                         <PlatformIcon platform={p.value} size="w-8 h-8" />
                         <span className="text-[9px] text-stone-500 font-bold uppercase tracking-wider">{p.label}</span>
@@ -921,9 +1010,9 @@ function InstaTrackApp() {
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Assign Handler</label>
                       {filteredHandlers.length > 0 ? (
-                        <select 
-                          value={newAccountHandlerId} 
-                          onChange={e => setNewAccountHandlerId(e.target.value)} 
+                        <select
+                          value={newAccountHandlerId}
+                          onChange={e => setNewAccountHandlerId(e.target.value)}
                           className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm appearance-none cursor-pointer"
                         >
                           <option value="" disabled>Select a handler...</option>
@@ -933,15 +1022,105 @@ function InstaTrackApp() {
                         </select>
                       ) : (
                         <div className="bg-orange-50 text-orange-600 p-3 rounded-xl text-xs flex items-center gap-2">
-                           <AlertCircle className="w-4 h-4" /> Please create a Handler first.
+                          <AlertCircle className="w-4 h-4" /> Please create a Handler first.
                         </div>
                       )}
                     </div>
                   </>
                 )}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Assets Link (Optional)</label>
+                  <input type="url" value={newAccountAssetsLink} onChange={e => setNewAccountAssetsLink(e.target.value)} placeholder="https://drive.google.com/..." className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Description (Optional)</label>
+                  <textarea value={newAccountDescription} onChange={e => setNewAccountDescription(e.target.value)} placeholder="Enter account description..." rows={3} className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm resize-none" />
+                </div>
                 <div className="flex gap-3 pt-4">
                   <button type="button" onClick={() => setIsAddingAccount(false)} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
                   <button type="submit" disabled={!newAccountHandlerId || !newAccountUsername || !newAccountOwnerName} className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all disabled:opacity-50">Save</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Account Modal */}
+      <AnimatePresence>
+        {editModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditModal(prev => ({ ...prev, isOpen: false }))} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-sm bg-white rounded-[32px] p-8 shadow-2xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 bg-stone-100 rounded-2xl flex items-center justify-center">
+                  <Pencil className="w-6 h-6 text-stone-500" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold tracking-tight">Edit Account</h3>
+                  <p className="text-stone-400 text-xs">@{editModal.account?.username}</p>
+                </div>
+              </div>
+              <form onSubmit={submitEditAccount} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Platform</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {PLATFORMS.map(p => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setEditModal(prev => ({ ...prev, platform: p.value }))}
+                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-xs font-medium ${editModal.platform === p.value
+                            ? 'border-stone-900 bg-stone-50'
+                            : 'border-stone-100 hover:border-stone-200'
+                          }`}
+                      >
+                        <PlatformIcon platform={p.value} size="w-8 h-8" />
+                        <span className="text-[9px] text-stone-500 font-bold uppercase tracking-wider">{p.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Username</label>
+                  <input autoFocus type="text" value={editModal.username} onChange={e => setEditModal(prev => ({ ...prev, username: e.target.value }))} placeholder="@username" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Account Name (Optional)</label>
+                  <input type="text" value={editModal.name} onChange={e => setEditModal(prev => ({ ...prev, name: e.target.value }))} placeholder="e.g. My Personal Account" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Owner Name</label>
+                  <input type="text" value={editModal.ownerName} onChange={e => setEditModal(prev => ({ ...prev, ownerName: e.target.value }))} placeholder="Full Name" className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Assign Handler</label>
+                  {handlers.length > 0 ? (
+                    <select
+                      value={editModal.handlerId}
+                      onChange={e => setEditModal(prev => ({ ...prev, handlerId: e.target.value }))}
+                      className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm appearance-none cursor-pointer"
+                    >
+                      <option value="">No handler</option>
+                      {handlers.map(h => (
+                        <option key={h.id || h._id} value={h.id || h._id}>{h.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-xs text-stone-400 italic">No handlers available</p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Assets Link (Optional)</label>
+                  <input type="url" value={editModal.assetsLink} onChange={e => setEditModal(prev => ({ ...prev, assetsLink: e.target.value }))} placeholder="https://drive.google.com/..." className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Description (Optional)</label>
+                  <textarea value={editModal.description} onChange={e => setEditModal(prev => ({ ...prev, description: e.target.value }))} placeholder="Enter account description..." rows={3} className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm resize-none" />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setEditModal(prev => ({ ...prev, isOpen: false }))} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
+                  <button type="submit" disabled={!editModal.username?.trim() || !editModal.ownerName?.trim()} className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all disabled:opacity-50">Save Changes</button>
                 </div>
               </form>
             </motion.div>

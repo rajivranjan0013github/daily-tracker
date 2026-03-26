@@ -15,7 +15,7 @@ const __dirname = dirname(__filename);
 process.on('exit', (code) => console.log('Process exiting with code', code));
 
 // Load environment variables from the project root .env file
-dotenv.config(); 
+dotenv.config();
 dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const app = express();
@@ -115,6 +115,16 @@ app.post('/api/accounts', async (req, res) => {
   }
 });
 
+app.patch('/api/accounts/:id', async (req, res) => {
+  try {
+    const account = await Account.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    res.json(account);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.delete('/api/accounts/:id', async (req, res) => {
   try {
     await Account.findByIdAndDelete(req.params.id);
@@ -161,9 +171,9 @@ app.delete('/api/posts/:accountId/:date/:index', async (req, res) => {
 // --- Handler Lookup ---
 app.get('/api/accounts/lookup/:platform/:username', async (req, res) => {
   try {
-    const account = await Account.findOne({ 
+    const account = await Account.findOne({
       platform: req.params.platform,
-      username: { $regex: new RegExp(`^${req.params.username}$`, 'i') } 
+      username: { $regex: new RegExp(`^${req.params.username}$`, 'i') }
     });
     if (!account) return res.status(404).json({ error: 'Account not found for this platform' });
     res.json(account);
