@@ -166,6 +166,7 @@ function InstaTrackApp() {
     date: '',
     index: 0,
     link: '',
+    isEditing: false,
   });
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
@@ -361,29 +362,24 @@ function InstaTrackApp() {
   };
 
   const handleCheckboxClick = (accId, date, index, existingPost) => {
-    if (!existingPost) {
-      setPostModal({
-        isOpen: true,
-        accountId: accId,
-        date: date,
-        index: index,
-        link: '',
-      });
-    } else {
-      setConfirmModal({
-        isOpen: true,
-        title: 'Remove Video Post',
-        message: `Are you sure you want to remove video post #${index}?`,
-        onConfirm: async () => {
-          try {
-            await api.deletePost(accId, date, index);
-            setPosts(posts.filter(p => !(p.accountId === accId && p.date === date && p.index === index)));
-            setConfirmModal(prev => ({ ...prev, isOpen: false }));
-          } catch (error) {
-            handleAppError(error);
-          }
-        }
-      });
+    setPostModal({
+      isOpen: true,
+      accountId: accId,
+      date: date,
+      index: index,
+      link: existingPost?.link || '',
+      isEditing: !!existingPost
+    });
+  };
+
+  const handleDeletePost = async (accId, date, index) => {
+    if (!confirm(`Are you sure you want to remove video post #${index}?`)) return;
+    try {
+      await api.deletePost(accId, date, index);
+      setPosts(posts.filter(p => !(p.accountId === accId && p.date === date && p.index === index)));
+      setPostModal(prev => ({ ...prev, isOpen: false }));
+    } catch (error) {
+      handleAppError(error);
     }
   };
 
@@ -394,7 +390,7 @@ function InstaTrackApp() {
         accountId: postModal.accountId,
         date: postModal.date,
         index: postModal.index,
-        link: postModal.link.trim(),
+        link: getPlatformId(postModal.link),
       });
       setPosts(prev => {
         const index = prev.findIndex(p => p.accountId === savedPost.accountId && p.date === savedPost.date && p.index === savedPost.index);
@@ -418,12 +414,12 @@ function InstaTrackApp() {
     });
   };
 
-  const getInstagramId = (url) => {
+  const getPlatformId = (url) => {
     if (!url) return '';
     const trimmed = url.trim();
-    if (!trimmed.includes('instagram.com')) return trimmed;
-    const match = trimmed.match(/\/(reels?|p)\/([^\/]+)/i);
-    return (match && match[2]) ? match[2] : trimmed;
+    if (!trimmed.includes('.com')) return trimmed;
+    const match = trimmed.match(/\/(reels?|p|video|shorts|share\/[rv])\/([^/?]+)/i);
+    return match && match[2] ? match[2] : trimmed;
   };
 
   const getFullUrl = (id, platform) => {
@@ -431,6 +427,8 @@ function InstaTrackApp() {
     const trimmed = id.trim();
     if (trimmed.startsWith('http')) return trimmed;
     if (platform === 'youtube') return `https://www.youtube.com/shorts/${trimmed}`;
+    if (platform === 'facebook') return `https://www.facebook.com/share/r/${trimmed}/`;
+    if (platform === 'tiktok') return `https://www.tiktok.com/@user/video/${trimmed}`;
     return `https://www.instagram.com/reels/${trimmed}/`;
   };
 
@@ -547,11 +545,23 @@ function InstaTrackApp() {
               <form onSubmit={submitPost} className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Video Link</label>
-                  <input autoFocus type="url" placeholder="https://instagram.com/p/..." value={postModal.link} onChange={(e) => setPostModal({ ...postModal, link: e.target.value })} className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                  <input autoFocus type="text" placeholder="https://instagram.com/p/..." value={postModal.link} onChange={(e) => setPostModal({ ...postModal, link: e.target.value })} className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
                 </div>
                 <div className="flex gap-3 pt-2">
+                  {postModal.isEditing && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePost(postModal.accountId, postModal.date, postModal.index)}
+                      className="px-4 py-3 bg-red-50 text-red-500 rounded-2xl font-medium text-sm hover:bg-red-100 transition-colors"
+                      title="Delete post"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  )}
                   <button type="button" onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
-                  <button type="submit" className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all">Save Post</button>
+                  <button type="submit" className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all">
+                    {postModal.isEditing ? 'Update Post' : 'Save Post'}
+                  </button>
                 </div>
               </form>
             </motion.div>

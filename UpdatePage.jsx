@@ -15,6 +15,7 @@ import {
   ExternalLink,
   Copy,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -42,7 +43,7 @@ export default function UpdatePage() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [postModal, setPostModal] = useState({ isOpen: false, accId: '', index: 0, link: '', saving: false });
+  const [postModal, setPostModal] = useState({ isOpen: false, accId: '', index: 0, link: '', saving: false, isEditing: false });
   const [inputId, setInputId] = useState('');
   const [handlerName, setHandlerName] = useState('');
   const [copiedAccountId, setCopiedAccountId] = useState(null);
@@ -119,7 +120,28 @@ export default function UpdatePage() {
       index,
       link: existingPost?.link || '',
       saving: false,
+      isEditing: !!existingPost,
     });
+  };
+
+  const handleDeletePost = async () => {
+    if (!confirm(`Are you sure you want to remove video post #${postModal.index}?`)) return;
+    try {
+      setPostModal(prev => ({ ...prev, saving: true }));
+      const res = await fetch(`${API_BASE_URL}/posts/${postModal.accId}/${today}/${postModal.index}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to delete post');
+
+      setAccounts(prev => prev.map(a => {
+        if ((a.account._id || a.account.id) !== postModal.accId) return a;
+        return { ...a, posts: a.posts.filter(p => p.index !== postModal.index) };
+      }));
+      setPostModal(prev => ({ ...prev, isOpen: false }));
+    } catch (err) {
+      setError(err.message);
+      setPostModal(prev => ({ ...prev, saving: false }));
+    }
   };
 
   const handlePaste = async () => {
@@ -169,7 +191,7 @@ export default function UpdatePage() {
     if (!url) return '';
     const trimmed = url.trim();
     if (!trimmed.includes('.com')) return trimmed;
-    const match = trimmed.match(/\/(reels?|p|video|shorts)\/([^/?]+)/i);
+    const match = trimmed.match(/\/(reels?|p|video|shorts|share\/[rv])\/([^/?]+)/i);
     return match && match[2] ? match[2] : trimmed;
   };
 
@@ -310,9 +332,20 @@ export default function UpdatePage() {
                   </div>
                 </div>
                 <div className="flex gap-3 pt-2">
+                  {postModal.isEditing && (
+                    <button
+                      type="button"
+                      disabled={postModal.saving}
+                      onClick={handleDeletePost}
+                      className="px-4 py-3 bg-red-50 text-red-500 rounded-2xl font-medium text-sm hover:bg-red-100 transition-colors disabled:opacity-50"
+                      title="Delete post"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  )}
                   <button type="button" onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
                   <button type="submit" disabled={postModal.saving || !postModal.link?.trim()} className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                    {postModal.saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Post'}
+                    {postModal.saving ? <Loader2 className="w-4 h-4 animate-spin" /> : (postModal.isEditing ? 'Update Post' : 'Save Post')}
                   </button>
                 </div>
               </form>
