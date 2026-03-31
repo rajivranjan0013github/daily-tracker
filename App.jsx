@@ -684,7 +684,7 @@ function InstaTrackApp() {
       <main className="max-w-5xl mx-auto px-6 py-10 space-y-10">
         {selectedProjectId ? (
           <>
-            <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <section className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="md:col-span-2 bg-white p-8 rounded-[32px] shadow-sm border border-stone-200">
                 <div className="flex items-center justify-between mb-8"><h2 className="text-lg font-bold tracking-tight flex items-center gap-2"><BarChart3 className="w-5 h-5 text-stone-400" /> Weekly Performance</h2></div>
                 <div className="h-64 w-full">
@@ -717,7 +717,32 @@ function InstaTrackApp() {
                     <p className="text-[10px] text-stone-500 uppercase tracking-widest font-bold mb-1">Accounts</p>
                     <p className="text-2xl font-bold tracking-tight">{filteredAccounts.length}</p>
                   </div>
-                  <Eye className="w-8 h-8 text-stone-700" />
+                  <CheckCircle2 className="w-8 h-8 text-stone-700" />
+                </div>
+              </motion.div>
+
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-white p-8 rounded-[32px] shadow-sm border border-stone-200 flex flex-col justify-between">
+                <div>
+                  <p className="text-stone-400 text-sm font-medium mb-1">Total View Gain</p>
+                  <h3 className="text-5xl font-bold tracking-tight mb-2 text-stone-900">{todayStats.totalViews.toLocaleString()}</h3>
+                  <p className="text-emerald-500 text-xs mt-4 mb-1 uppercase tracking-widest font-bold flex items-center gap-1">
+                    <Eye className="w-3 h-3" /> Growth Detected
+                  </p>
+                  <div className="mt-4 p-4 bg-stone-50 rounded-2xl">
+                    <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mb-1">Avg Views/Post</p>
+                    <p className="text-lg font-bold text-stone-900">
+                      {todayStats.count > 0 ? Math.round(todayStats.totalViews / todayStats.count).toLocaleString() : 0}
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-6 border-t border-stone-100 flex justify-between items-end">
+                  <div>
+                    <p className="text-[10px] text-stone-400 uppercase tracking-widest font-bold mb-1">Reporting Date</p>
+                    <p className="text-sm font-bold text-stone-900">{format(new Date(selectedDate), 'MMM dd')}</p>
+                  </div>
+                  <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+                    <BarChart3 className="w-5 h-5 text-emerald-500" />
+                  </div>
                 </div>
               </motion.div>
             </section>
