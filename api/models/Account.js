@@ -8,6 +8,10 @@ const accountSchema = new mongoose.Schema({
   projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
   handlerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Handler' },
   assetsLink: { type: String },
+  videoQueue: { type: [String], default: [] },
+  videoIndex: { type: Number, default: 1 },
+  videoCount: { type: Number, default: 0 },
+  r2Prefix: { type: String, default: '' }, // Override R2 directory (uses username if empty)
   description: { type: String, default: '' },
   uid: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },

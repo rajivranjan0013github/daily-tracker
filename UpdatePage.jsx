@@ -13,11 +13,19 @@ import {
   Youtube,
   Download,
   ExternalLink,
-  Copy,
+  Link2,
   Check,
   Trash2,
+  Upload,
+  CloudUpload,
+  FolderUp,
+  Send,
+  CheckCheck,
+  RefreshCw,
+  BarChart3,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Link } from 'react-router-dom';
 
 const PLATFORMS = [
   { value: 'instagram', icon: Instagram, gradient: 'from-purple-500 via-pink-500 to-orange-400' },
@@ -37,17 +45,154 @@ const PlatformIcon = ({ platform, size = 'w-10 h-10' }) => {
   );
 };
 
-const API_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5001/api' : '/api';
+const ProfileLinkButton = ({ username, platform }) => {
+  if (!username) return null;
+
+  const getUrl = () => {
+    switch (platform) {
+      case 'instagram': return `https://www.instagram.com/${username}/`;
+      case 'facebook': return `https://www.facebook.com/${username}`;
+      case 'youtube': return `https://www.youtube.com/@${username}`;
+      case 'tiktok': return `https://www.tiktok.com/@${username}`;
+      default: return `https://www.instagram.com/${username}/`;
+    }
+  };
+
+  return (
+    <a
+      href={getUrl()}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      title="Open profile"
+      className="opacity-0 group-hover:opacity-100 p-1 text-stone-400 hover:text-stone-900 transition-all font-sans"
+    >
+      <ExternalLink className="w-4 h-4" />
+    </a>
+  );
+};
+
+
+const API_BASE_URL = '/api';
+ 
+const Header = ({
+  handlerId,
+  handlerName,
+  isAdmin,
+  setIsAdmin,
+  handlerData,
+  deferredPrompt,
+  handleInstallClick,
+  onLogout,
+  accounts = []
+}) => {
+  return (
+    <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-stone-200">
+      <div className="max-w-2xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-stone-900 rounded-xl flex items-center justify-center">
+            <Layers className="w-6 h-6 text-white" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">TW</h1>
+          {handlerName && accounts.length === 0 && (
+            <span className="text-stone-400 text-xs font-medium ml-2">/ {handlerName}</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {deferredPrompt && (
+            <button
+              onClick={handleInstallClick}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all"
+            >
+              <Download className="w-4 h-4" /> Install App
+            </button>
+          )}
+
+          {handlerId && (
+            <>
+              {isAdmin && (
+                <Link
+                  to="/dashboard"
+                  className="flex items-center gap-2 px-3 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-bold hover:bg-indigo-100 transition-all"
+                >
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  Dashboard
+                </Link>
+              )}
+              <button
+                onClick={async () => {
+                  if (!handlerData?.id) return;
+                  try {
+                    const nextStatus = !isAdmin;
+                    const res = await fetch(`${API_BASE_URL}/handlers/${handlerData.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ isAdmin: nextStatus })
+                    });
+                    if (res.ok) {
+                      setIsAdmin(nextStatus);
+                      alert(nextStatus ? 'Promoted to Admin!' : 'Demoted to Handler');
+                    }
+                  } catch (err) {
+                    alert('Failed to update: ' + err.message);
+                  }
+                }}
+                className={`flex items-center gap-2 px-3 py-2 ${isAdmin ? 'bg-amber-100 text-amber-700' : 'bg-stone-900 text-white'} rounded-xl text-[10px] font-bold hover:opacity-90 transition-all`}
+              >
+                {isAdmin ? '🛡️ Admin' : '💎 Go Admin'}
+              </button>
+              <button
+                onClick={onLogout}
+                className="flex items-center gap-2 px-3 py-2 bg-stone-100 text-stone-600 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all"
+              >
+                Log Out
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+};
 
 export default function UpdatePage() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [postModal, setPostModal] = useState({ isOpen: false, accId: '', index: 0, link: '', saving: false, isEditing: false });
+  const [postModal, setPostModal] = useState({ 
+    isOpen: false, 
+    accId: '', 
+    index: 0, 
+    link: '', 
+    saving: false, 
+    isEditing: false,
+    assetsLink: '',
+    videoIndex: 1,
+    directLink: ''
+  });
   const [inputId, setInputId] = useState('');
   const [handlerName, setHandlerName] = useState('');
-  const [copiedAccountId, setCopiedAccountId] = useState(null);
+  const [captionCopied, setCaptionCopied] = useState({});
   const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [uploadState, setUploadState] = useState({});
+  const [sharingAccId, setSharingAccId] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [handlerData, setHandlerData] = useState(null); // { id, name }
+  const [pendingDone, setPendingDone] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pendingDone');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error("Failed to load pendingDone from localStorage", e);
+      return {};
+    }
+  }); // { [accId]: videoNumber } — tracks accounts awaiting "Mark Done"
+
+  // Sync pendingDone to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('pendingDone', JSON.stringify(pendingDone));
+  }, [pendingDone]);
 
   const urlHandlerId = new URLSearchParams(window.location.search).get('h');
   const savedHandlerId = localStorage.getItem('handlerId');
@@ -67,8 +212,10 @@ export default function UpdatePage() {
         const data = await res.json();
 
         const handlerAccounts = Array.isArray(data) ? data : data.accounts;
-        if (!Array.isArray(data) && data.handler?.name) {
+        if (!Array.isArray(data) && data.handler) {
           setHandlerName(data.handler.name);
+          setIsAdmin(data.handler.isAdmin);
+          setHandlerData(data.handler);
         }
 
         const accsWithPosts = await Promise.all(handlerAccounts.map(async (account) => {
@@ -110,6 +257,339 @@ export default function UpdatePage() {
     return accData.posts.find(p => p.index === index);
   };
 
+  const handleVideoUpload = async (accId, files) => {
+    if (!files || files.length === 0) return;
+    const accData = accounts.find(a => (a.account._id || a.account.id) === accId);
+    if (!accData) return;
+
+    const allFiles = Array.from(files);
+
+    // Filter to only video files and sort by name for consistent ordering
+    const videoFiles = allFiles
+      .filter(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(f.name))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+    // Extract caption .txt files and map by base filename
+    const captionMap = {};
+    const txtFiles = allFiles.filter(f => /\.txt$/i.test(f.name));
+   
+    txtFiles.forEach(f => {
+      const baseName = f.name.replace(/\.[^.]+$/, '');
+      captionMap[baseName] = f;
+    });
+
+    // If no videos but there are captions, upload captions standalone
+    if (videoFiles.length === 0 && txtFiles.length > 0) {
+      setUploadState(prev => ({
+        ...prev,
+        [accId]: { progress: 0, uploading: true, error: '', success: '', current: 1, total: txtFiles.length }
+      }));
+      try {
+        for (let i = 0; i < txtFiles.length; i++) {
+          const tf = txtFiles[i];
+          const videoNumber = tf.name.replace(/\.txt$/i, ''); // e.g., "14.txt" → "14"
+          setUploadState(prev => ({
+            ...prev,
+            [accId]: { ...prev[accId], current: i + 1, progress: Math.round(((i) / txtFiles.length) * 100) }
+          }));
+          const capRes = await fetch(`${API_BASE_URL}/accounts/${accId}/caption-upload-url?videoNumber=${videoNumber}`);
+          if (capRes.ok) {
+            const { uploadUrl: capUploadUrl } = await capRes.json();
+            await fetch(capUploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'text/plain' },
+              body: tf,
+            });
+          }
+        }
+        const msg = `${txtFiles.length} caption${txtFiles.length > 1 ? 's' : ''} uploaded!`;
+        setUploadState(prev => ({ ...prev, [accId]: { progress: 100, uploading: false, error: '', success: msg, current: txtFiles.length, total: txtFiles.length } }));
+        setTimeout(() => setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], success: '' } })), 4000);
+      } catch (err) {
+        setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], uploading: false, error: err.message } }));
+      }
+      return;
+    }
+
+    if (videoFiles.length === 0) return;
+
+    const total = videoFiles.length;
+    setUploadState(prev => ({
+      ...prev,
+      [accId]: { progress: 0, uploading: true, error: '', success: '', current: 1, total }
+    }));
+
+    let lastVideoNumber = 0;
+    try {
+      for (let i = 0; i < videoFiles.length; i++) {
+        const file = videoFiles[i];
+        const fileNum = i + 1;
+
+        setUploadState(prev => ({
+          ...prev,
+          [accId]: { ...prev[accId], current: fileNum, progress: 0 }
+        }));
+
+        // Step 1: Get presigned URL
+        const res = await fetch(`${API_BASE_URL}/accounts/${accId}/upload-url?filename=${encodeURIComponent(file.name)}`);
+        if (!res.ok) throw new Error(`Failed to get upload URL for file ${fileNum}`);
+        const { uploadUrl, videoNumber } = await res.json();
+
+        // Step 2: Upload file directly to R2 with progress
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 100);
+              setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], progress: pct } }));
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`Upload failed for file ${fileNum}: ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error(`Network error uploading file ${fileNum}`));
+          xhr.send(file);
+        });
+
+        // Step 3: Confirm upload
+        await fetch(`${API_BASE_URL}/accounts/${accId}/confirm-upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoNumber }),
+        });
+
+        // Step 4: Upload matching caption if exists
+        const videoBaseName = file.name.replace(/\.[^.]+$/, '');
+        const captionFile = captionMap[videoBaseName];
+        if (captionFile) {
+          try {
+            const capRes = await fetch(`${API_BASE_URL}/accounts/${accId}/caption-upload-url?videoNumber=${videoNumber}`);
+            if (capRes.ok) {
+              const { uploadUrl: capUploadUrl } = await capRes.json();
+              await fetch(capUploadUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'text/plain' },
+                body: captionFile,
+              });
+            }
+          } catch (capErr) {
+            console.warn(`Caption upload failed for video #${videoNumber}:`, capErr);
+          }
+        }
+
+        lastVideoNumber = videoNumber;
+
+        // Update local state progressively
+        setAccounts(prev => prev.map(a => {
+          if ((a.account._id || a.account.id) !== accId) return a;
+          return { ...a, account: { ...a.account, videoCount: videoNumber } };
+        }));
+      }
+
+      const captionCount = videoFiles.filter(f => captionMap[f.name.replace(/\.[^.]+$/, '')]).length;
+      const capSuffix = captionCount > 0 ? ` + ${captionCount} caption${captionCount > 1 ? 's' : ''}` : '';
+      const msg = total === 1 ? `Video #${lastVideoNumber} uploaded!${capSuffix}` : `${total} videos uploaded! (#${lastVideoNumber - total + 1} → #${lastVideoNumber})${capSuffix}`;
+      setUploadState(prev => ({ ...prev, [accId]: { progress: 100, uploading: false, error: '', success: msg, current: total, total } }));
+      setTimeout(() => setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], success: '' } })), 4000);
+    } catch (err) {
+      setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], uploading: false, error: err.message } }));
+    }
+  };
+
+  const handlePostNext = async (accId) => {
+    setSharingAccId(accId);
+    try {
+      // Step 1: Get video info WITHOUT advancing pointer
+      const res = await fetch(`${API_BASE_URL}/accounts/${accId}/next-video`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to get next video');
+        setSharingAccId(null);
+        return;
+      }
+
+      const videoNumber = data.currentVideoNumber;
+
+      // Step 1.5: Auto-copy caption to clipboard
+      try {
+        const captionRes = await fetch(`${API_BASE_URL}/accounts/${accId}/caption/${videoNumber}`);
+        const captionData = await captionRes.json();
+        if (captionData.caption) {
+          await navigator.clipboard.writeText(captionData.caption);
+          setCaptionCopied(prev => ({ ...prev, [accId]: true }));
+          setTimeout(() => setCaptionCopied(prev => { const n = { ...prev }; delete n[accId]; return n; }), 5000);
+        }
+      } catch (captionErr) {
+        console.warn('Could not fetch/copy caption:', captionErr);
+      }
+
+      // Step 2: Try native share if on HTTPS (production)
+      if (window.isSecureContext && navigator.share) {
+        try {
+          const proxyUrl = `${API_BASE_URL}/accounts/${accId}/video/${videoNumber}`;
+          const videoRes = await fetch(proxyUrl);
+          if (videoRes.ok) {
+            const blob = await videoRes.blob();
+            const fileName = `video_${videoNumber}.mp4`;
+            const file = new File([blob], fileName, { type: 'video/mp4' });
+
+            if (navigator.canShare?.({ files: [file] })) {
+              await navigator.share({ files: [file], title: fileName });
+              // Share sheet opened — mark as pending done
+              setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+              setSharingAccId(null);
+              return;
+            }
+          }
+        } catch (shareErr) {
+          if (shareErr.name === 'AbortError') {
+            // User cancelled share — still mark as pending so they can retry or confirm
+            setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+            setSharingAccId(null);
+            return;
+          }
+        }
+      }
+
+      // Step 3: Fallback — open video URL directly
+      window.open(data.videoUrl, '_blank');
+      // Mark as pending done
+      setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+      setSharingAccId(null);
+    } catch (err) {
+      setError(err.message);
+      setSharingAccId(null);
+    }
+  };
+
+  const handleMarkDone = async (accId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/accounts/${accId}/next-video/mark-done`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: today })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to mark video as done');
+        return;
+      }
+
+      // Update local state — advance the pointer AND add the new post record
+      setAccounts(prev => prev.map(a => {
+        if ((a.account._id || a.account.id) !== accId) return a;
+        
+        const updatedPosts = [...a.posts];
+        if (data.post) {
+          const existingIdx = updatedPosts.findIndex(p => p.index === data.post.index);
+          if (existingIdx > -1) {
+            updatedPosts[existingIdx] = data.post;
+          } else {
+            updatedPosts.push(data.post);
+          }
+        }
+
+        return { 
+          ...a, 
+          account: { ...a.account, videoIndex: data.nextVideoNumber },
+          posts: updatedPosts
+        };
+      }));
+
+      // Clear pending state
+      setPendingDone(prev => {
+        const next = { ...prev };
+        delete next[accId];
+        return next;
+      });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleLinkR2 = async (accId) => {
+    const accData = accounts.find(a => (a.account._id || a.account.id) === accId);
+    if (!accData) return;
+    const currentPrefix = accData.account.r2Prefix || '';
+    const input = prompt(
+      `Link Cloudflare R2 folder to @${accData.account.username}\n\nEnter the FULL Cloudflare URL (e.g., https://content.thethousandways.com/folder_name):`,
+      currentPrefix
+    );
+    if (input === null) return; // cancelled
+    const r2Prefix = input.trim();
+    if (!r2Prefix || !r2Prefix.startsWith('https://')) {
+      setError('A full Cloudflare URL starting with https:// is required');
+      return;
+    }
+
+    // Ask for video count separately — each account tracks its own count
+    const countInput = prompt(
+      `How many videos are in the "${r2Prefix}" folder?\n\n(Leave blank to AUTO-DETECT from folder)`,
+      ''
+    );
+    if (countInput === null) return; // cancelled
+
+    const body = { r2Prefix };
+    if (countInput.trim() !== '') {
+      const parsed = parseInt(countInput.trim(), 10);
+      if (!isNaN(parsed) && parsed >= 0) {
+        body.videoCount = parsed;
+      }
+    }
+
+    // Ask for video index (the pointer)
+    const indexInput = prompt(
+      `Starting Video Index (which video to post next)?\n\n(Leave blank to keep current index: ${accData.account.videoIndex || 1})`,
+      ''
+    );
+    if (indexInput === null) return; // cancelled
+    if (indexInput.trim() !== '') {
+      const parsed = parseInt(indexInput.trim(), 10);
+      if (!isNaN(parsed) && parsed >= 1) {
+        body.videoIndex = parsed;
+      }
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/accounts/${accId}/link-r2`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to link R2 directory');
+        return;
+      }
+
+      if (data.warning) {
+        alert(data.warning);
+      } else {
+        const countMsg = data.videoCount !== undefined ? ` (Detected ${data.videoCount} videos)` : '';
+      }
+      // Update local state
+      setAccounts(prev => prev.map(a => {
+        if ((a.account._id || a.account.id) !== accId) return a;
+        return { 
+          ...a, 
+          account: { 
+            ...a.account, 
+            r2Prefix: data.r2Prefix, 
+            videoCount: data.videoCount,
+            videoIndex: data.videoIndex 
+          } 
+        };
+      }));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleCheckboxClick = (accId, index) => {
     const accData = accounts.find(a => (a.account._id || a.account.id) === accId);
     if (!accData) return;
@@ -121,6 +601,9 @@ export default function UpdatePage() {
       link: existingPost?.link || '',
       saving: false,
       isEditing: !!existingPost,
+      assetsLink: accData.account.assetsLink || '',
+      videoIndex: accData.account.videoIndex || 1,
+      directLink: (!existingPost && accData.account.videoQueue?.length > 0) ? accData.account.videoQueue[0] : '',
     });
   };
 
@@ -181,6 +664,29 @@ export default function UpdatePage() {
         return { ...a, posts: newPosts };
       }));
       setPostModal(prev => ({ ...prev, isOpen: false }));
+
+      // Increment videoIndex & handle Queue after a new post
+      if (!postModal.isEditing) {
+        const updateData = {};
+        if (postModal.assetsLink) updateData.videoIndex = (postModal.videoIndex || 1) + 1;
+        
+        const accData = accounts.find(a => (a.account._id || a.account.id) === postModal.accId);
+        if (accData && accData.account.videoQueue?.length > 0 && postModal.directLink === accData.account.videoQueue[0]) {
+          updateData.videoQueue = accData.account.videoQueue.slice(1);
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await fetch(`${API_BASE_URL}/accounts/${postModal.accId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updateData),
+          });
+          setAccounts(prev => prev.map(a => {
+            if ((a.account._id || a.account.id) !== postModal.accId) return a;
+            return { ...a, account: { ...a.account, ...updateData } };
+          }));
+        }
+      }
     } catch (err) {
       setError(err.message);
       setPostModal(prev => ({ ...prev, saving: false }));
@@ -206,33 +712,12 @@ export default function UpdatePage() {
   if (!handlerId) {
     return (
       <div className="min-h-screen bg-stone-50 font-sans flex flex-col">
-        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-stone-200">
-          <div className="max-w-xl mx-auto px-6 h-16 flex items-center gap-3">
-            <div className="w-10 h-10 bg-stone-900 rounded-xl flex items-center justify-center">
-              <Layers className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight">TW</h1>
-          </div>
-          {deferredPrompt && (
-            <button
-              onClick={handleInstallClick}
-              className="ml-auto flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all animate-bounce"
-            >
-              <Download className="w-4 h-4" /> Install App
-            </button>
-          )}
-          {handlerId && (
-            <button
-              onClick={() => {
-                localStorage.removeItem('handlerId');
-                window.location.href = '/';
-              }}
-              className="ml-2 flex items-center gap-2 px-3 py-2 bg-stone-100 text-stone-600 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all"
-            >
-              Log Out
-            </button>
-          )}
-        </header>
+        <Header 
+          handlerId={handlerId}
+          deferredPrompt={deferredPrompt}
+          handleInstallClick={handleInstallClick}
+          accounts={accounts}
+        />
         <main className="flex-1 flex items-center justify-center px-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm bg-white rounded-[32px] p-8 shadow-sm border border-stone-200 text-center">
             <div className="w-16 h-16 bg-stone-900 rounded-2xl flex items-center justify-center mx-auto mb-6">
@@ -278,14 +763,20 @@ export default function UpdatePage() {
   if (accounts.length === 0) {
     return (
       <div className="min-h-screen bg-stone-50 font-sans flex flex-col">
-        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-stone-200">
-          <div className="max-w-xl mx-auto px-6 h-16 flex items-center gap-3">
-            <div className="w-10 h-10 bg-stone-900 rounded-xl flex items-center justify-center">
-              <Layers className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight">TW</h1>
-          </div>
-        </header>
+        <Header 
+          handlerId={handlerId}
+          handlerName={handlerName}
+          isAdmin={isAdmin}
+          setIsAdmin={setIsAdmin}
+          handlerData={handlerData}
+          deferredPrompt={deferredPrompt}
+          handleInstallClick={handleInstallClick}
+          accounts={accounts}
+          onLogout={() => {
+            localStorage.removeItem('handlerId');
+            window.location.href = '/';
+          }}
+        />
         <main className="flex-1 flex items-center justify-center px-6">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center w-full max-w-sm">
             <div className="w-16 h-16 bg-stone-100 rounded-2xl flex items-center justify-center mx-auto mb-6"><Layers className="w-8 h-8 text-stone-400" /></div>
@@ -311,12 +802,42 @@ export default function UpdatePage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-sm bg-white rounded-[32px] p-8 shadow-2xl border border-stone-200">
-              <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6"><Plus className="w-6 h-6 text-emerald-500" /></div>
-              <h3 className="text-xl font-bold tracking-tight text-stone-900 mb-2">Video Post #{postModal.index}</h3>
-              <p className="text-stone-500 text-sm leading-relaxed mb-6">Paste the video link below.</p>
+              <h3 className="text-2xl font-bold tracking-tight text-center text-stone-900 mb-2">Post Video #{postModal.videoIndex}</h3>
+              <p className="text-stone-400 text-xs text-center font-medium mb-8">@{accounts.find(a => (a.account._id || a.account.id) === postModal.accId)?.account.username}</p>
+
+              {/* Sequential Posting Actions */}
+              {!postModal.isEditing && (postModal.assetsLink || postModal.directLink) && (
+                <div className="space-y-3 mb-8">
+                  <a
+                    href={postModal.directLink || postModal.assetsLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all group"
+                  >
+                    <ExternalLink className="w-5 h-5" />
+                    {postModal.directLink ? `Open Direct Video #${postModal.videoIndex}` : `Open Folder for Video #${postModal.videoIndex}`}
+                  </a>
+                  
+                  <a
+                    href={(() => {
+                      const accData = accounts.find(a => (a.account._id || a.account.id) === postModal.accId);
+                      if (accData?.account.platform === 'instagram') return 'https://www.instagram.com/reels/create/';
+                      if (accData?.account.platform === 'tiktok') return 'https://www.tiktok.com/upload';
+                      if (accData?.account.platform === 'youtube') return 'https://studio.youtube.com/';
+                      return '#';
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-3 w-full py-3 bg-stone-100 text-stone-600 rounded-2xl font-bold hover:bg-stone-200 transition-all"
+                  >
+                    Open {accounts.find(a => (a.account._id || a.account.id) === postModal.accId)?.account.platform || 'Platform'}
+                  </a>
+                </div>
+              )}
+
               <form onSubmit={submitPost} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Video Link</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Paste Final Video Link</label>
                   <div className="relative">
                     <input
                       autoFocus
@@ -324,7 +845,7 @@ export default function UpdatePage() {
                       placeholder="https://.../video/..."
                       value={postModal.link}
                       onChange={(e) => setPostModal({ ...postModal, link: e.target.value })}
-                      className="w-full bg-stone-50 p-3 pr-12 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm"
+                      className="w-full bg-stone-50 p-4 pr-12 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm font-medium"
                     />
                     <button type="button" onClick={handlePaste} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-stone-400 hover:text-stone-900 transition-colors" title="Paste from clipboard">
                       <ClipboardPaste className="w-4 h-4" />
@@ -332,20 +853,9 @@ export default function UpdatePage() {
                   </div>
                 </div>
                 <div className="flex gap-3 pt-2">
-                  {postModal.isEditing && (
-                    <button
-                      type="button"
-                      disabled={postModal.saving}
-                      onClick={handleDeletePost}
-                      className="px-4 py-3 bg-red-50 text-red-500 rounded-2xl font-medium text-sm hover:bg-red-100 transition-colors disabled:opacity-50"
-                      title="Delete post"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  )}
-                  <button type="button" onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
-                  <button type="submit" disabled={postModal.saving || !postModal.link?.trim()} className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                    {postModal.saving ? <Loader2 className="w-4 h-4 animate-spin" /> : (postModal.isEditing ? 'Update Post' : 'Save Post')}
+                  <button type="button" onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="flex-1 px-4 py-4 bg-stone-100 text-stone-400 rounded-2xl font-bold text-sm hover:bg-stone-200 transition-colors uppercase tracking-widest">Cancel</button>
+                  <button type="submit" disabled={postModal.saving || !postModal.link?.trim()} className="flex-[2] px-4 py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 shadow-xl transition-all uppercase tracking-widest flex items-center justify-center gap-2">
+                    {postModal.saving ? <Loader2 className="w-4 h-4 animate-spin" /> : (postModal.isEditing ? 'Update Tracking' : 'Confirm Tracked')}
                   </button>
                 </div>
               </form>
@@ -354,35 +864,19 @@ export default function UpdatePage() {
         )}
       </AnimatePresence>
 
-      <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-stone-200">
-        <div className="max-w-2xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-stone-900 rounded-xl flex items-center justify-center">
-              <Layers className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight">TW</h1>
-          </div>
-          {deferredPrompt && (
-            <button
-              onClick={handleInstallClick}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all"
-            >
-              <Download className="w-4 h-4" /> Install App
-            </button>
-          )}
-          {handlerId && (
-            <button
-              onClick={() => {
-                localStorage.removeItem('handlerId');
-                window.location.href = '/';
-              }}
-              className="ml-2 flex items-center gap-2 px-3 py-2 bg-stone-100 text-stone-600 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all"
-            >
-              Log Out
-            </button>
-          )}
-        </div>
-      </header>
+      <Header 
+        handlerId={handlerId}
+        isAdmin={isAdmin}
+        setIsAdmin={setIsAdmin}
+        handlerData={handlerData}
+        deferredPrompt={deferredPrompt}
+        handleInstallClick={handleInstallClick}
+        accounts={accounts}
+        onLogout={() => {
+          localStorage.removeItem('handlerId');
+          window.location.href = '/';
+        }}
+      />
 
       <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         <div className="space-y-4 mb-2">
@@ -429,13 +923,70 @@ export default function UpdatePage() {
                 transition={{ delay: accIdx * 0.08 }}
                 className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 group"
               >
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-start justify-between mb-6">
+                  <div className="flex items-center gap-3 min-w-0">
                     <PlatformIcon platform={accData.account.platform} />
-                    <div>
-                      <span className="font-bold text-stone-900 tracking-tight">{accData.account.name || `@${accData.account.username}`}</span>
-                      <span className="block text-[10px] text-stone-400 font-bold uppercase tracking-wider">{accData.account.ownerName}</span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-bold text-stone-900 tracking-tight truncate">{accData.account.name || `@${accData.account.username}`}</span>
+                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider truncate">{accData.account.ownerName}</span>
                     </div>
+                  </div>
+
+                  {/* Unified Action Cluster */}
+                  <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                    <ProfileLinkButton username={accData.account.username} platform={accData.account.platform} />
+
+                    {/* Compact Plus Icon Upload */}
+                    {isAdmin && (
+                      <label className={`cursor-pointer p-1.5 rounded-full transition-all ${uploadState[accId]?.uploading ? 'text-indigo-600 bg-indigo-50' : 'text-stone-400 hover:text-stone-900 hover:bg-stone-50'}`}>
+                        <input
+                          type="file"
+                          className="hidden"
+                          disabled={uploadState[accId]?.uploading}
+                          {...{ webkitdirectory: '', directory: '' }}
+                          onChange={(e) => {
+                            if (e.target.files?.length) handleVideoUpload(accId, e.target.files);
+                            e.target.value = '';
+                          }}
+                        />
+                        {uploadState[accId]?.uploading ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                      </label>
+                    )}
+
+                    {/* Link R2 folder */}
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleLinkR2(accId)}
+                        title={accData.account.r2Prefix
+                          ? `Linked Storage: ${accData.account.r2Prefix}${accData.account.r2Prefix.endsWith('/') ? '' : '/'}`
+                          : `Default Storage: https://content.thethousandways.com/${accData.account.username}/`}
+                        className={`p-1.5 rounded-full transition-all ${accData.account.r2Prefix
+                            ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
+                            : 'text-stone-400 hover:text-stone-900 hover:bg-stone-50'
+                          }`}
+                      >
+                        <Link2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {isAdmin && (
+                      <button 
+                        onClick={() => {
+                          if (confirm(`Delete account @${accData.account.username}?`)) {
+                            fetch(`${API_BASE_URL}/accounts/${accId}`, { method: 'DELETE' })
+                              .then(res => res.ok && setAccounts(prev => prev.filter(a => (a.account._id || a.account.id) !== accId)));
+                          }
+                        }} 
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-stone-300 hover:text-red-500 transition-all" 
+                        title="Delete Account"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -459,37 +1010,80 @@ export default function UpdatePage() {
                     );
                   })}
                 </div>
-                <div className="flex gap-2 mt-3">
-                  {accData.account.assetsLink && (
-                    <a
-                      href={accData.account.assetsLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 text-amber-700 rounded-2xl text-xs font-bold hover:bg-amber-100 transition-all border border-amber-200"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" /> Assets
-                    </a>
-                  )}
-                  {accData.account.description && (
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(accData.account.description).then(() => {
-                          setCopiedAccountId(accId);
-                          setTimeout(() => setCopiedAccountId(null), 2000);
-                        });
-                      }}
-                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border ${
-                        copiedAccountId === accId
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
-                      }`}
-                    >
-                      {copiedAccountId === accId ? (
-                        <><Check className="w-3.5 h-3.5" /> Copied!</>
-                      ) : (
-                        <><Copy className="w-3.5 h-3.5" /> Copy</>
+                {/* Upload section */}
+                {(() => {
+                  const us = uploadState[accId];
+                  return (
+                    <div className="mt-3 space-y-2">
+                      {us?.uploading && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-stone-500">
+                              {us.total > 1 ? `File ${us.current}/${us.total}` : 'Uploading...'}
+                            </span>
+                            <span className="text-[10px] font-bold text-indigo-600">{us.progress}%</span>
+                          </div>
+                          <div className="w-full bg-stone-200 h-2 rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${us.progress}%` }}
+                              className="h-full bg-indigo-500 rounded-full"
+                            />
+                          </div>
+                        </>
                       )}
-                    </button>
+                      {us?.error && (
+                        <p className="text-[10px] font-bold text-red-500 text-center">{us.error}</p>
+                      )}
+                      {us?.success && (
+                        <p className="text-[10px] font-bold text-emerald-500 text-center">{us.success}</p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="flex gap-2 mt-3">
+                  {/* Post Next Video — two-step: Post opens video, Mark Done advances pointer */}
+                  {(accData.account.videoCount || 0) > 0 && (
+                    pendingDone[accId] ? (
+                      // Step 2: Mark as Done button
+                      <button
+                        onClick={() => handleMarkDone(accId)}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl text-xs font-bold transition-all bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-100 active:scale-95 animate-pulse"
+                      >
+                        <CheckCheck className="w-4 h-4" />
+                        Mark #{pendingDone[accId]} Done ??✓
+                      </button>
+                    ) : (
+                      // Step 1: Open / Share video
+                      <button
+                        onClick={() => handlePostNext(accId)}
+                        disabled={(accData.account.videoIndex || 1) > (accData.account.videoCount || 0) || sharingAccId === accId}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+                          (accData.account.videoIndex || 1) > (accData.account.videoCount || 0)
+                            ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                            : sharingAccId === accId
+                              ? 'bg-emerald-500 text-white cursor-wait'
+                              : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-100 active:scale-95'
+                        }`}
+                      >
+                        {sharingAccId === accId ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Loading...</>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4" />
+                            Post #{accData.account.videoIndex || 1}
+                            <span className="text-[9px] opacity-70">({(accData.account.videoCount || 0) - (accData.account.videoIndex || 1) + 1} left)</span>
+                          </>
+                        )}
+                      </button>
+                    )
+                  )}
+                  {captionCopied[accId] && (
+                    <div className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-emerald-50 text-emerald-600 rounded-2xl text-xs font-bold">
+                      <Check className="w-4 h-4" />
+                      Caption copied!
+                    </div>
                   )}
                 </div>
               </motion.div>

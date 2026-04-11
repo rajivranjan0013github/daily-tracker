@@ -21,8 +21,16 @@ import {
   Youtube,
   ExternalLink,
   Pencil,
+  CloudUpload,
+  Link2,
+  FolderUp,
+  Send,
+  CheckCheck,
+  RefreshCw,
+  ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Link } from 'react-router-dom';
 
 const PLATFORMS = [
   { value: 'instagram', label: 'Instagram', icon: Instagram, gradient: 'from-purple-500 via-pink-500 to-orange-400' },
@@ -52,6 +60,8 @@ import {
   ResponsiveContainer,
   Cell
 } from 'recharts';
+
+const API_BASE_URL = '/api';
 
 import { api } from './apiClient';
 
@@ -121,7 +131,7 @@ function ProfileLinkButton({ username, platform }) {
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
       title="Open profile"
-      className="opacity-0 group-hover:opacity-100 p-2 text-stone-300 hover:text-stone-600 transition-all"
+      className="opacity-0 group-hover:opacity-100 p-1 text-stone-400 hover:text-stone-900 transition-all"
     >
       <ExternalLink className="w-4 h-4" />
     </a>
@@ -135,25 +145,32 @@ function InstaTrackApp() {
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [posts, setPosts] = useState([]);
+  
+  // Account Form State
   const [newAccountUsername, setNewAccountUsername] = useState('');
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountOwnerName, setNewAccountOwnerName] = useState('');
   const [newAccountPlatform, setNewAccountPlatform] = useState('instagram');
   const [newAccountAssetsLink, setNewAccountAssetsLink] = useState('');
   const [newAccountDescription, setNewAccountDescription] = useState('');
-  const [copiedAccountId, setCopiedAccountId] = useState(null);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [isAddingAccount, setIsAddingAccount] = useState(false);
-  const [isAddingProject, setIsAddingProject] = useState(false);
-  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  const [newAccountHandlerId, setNewAccountHandlerId] = useState('');
+  
+  // Handler Form State
   const [handlers, setHandlers] = useState([]);
   const [newHandlerName, setNewHandlerName] = useState('');
   const [newHandlerId, setNewHandlerId] = useState('');
-  const [newAccountHandlerId, setNewAccountHandlerId] = useState('');
+  
+  // UI State
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [isAddingAccount, setIsAddingAccount] = useState(false);
+  const [isAddingProject, setIsAddingProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [isAddingHandler, setIsAddingHandler] = useState(false);
   const [isHandlerDropdownOpen, setIsHandlerDropdownOpen] = useState(false);
   const [selectedFilterHandlerId, setSelectedFilterHandlerId] = useState('all');
+  const [copiedAccountId, setCopiedAccountId] = useState(null);
+  
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
@@ -167,6 +184,8 @@ function InstaTrackApp() {
     index: 0,
     link: '',
     isEditing: false,
+    assetsLink: '',
+    videoIndex: 1,
   });
   const [historyModal, setHistoryModal] = useState({
     isOpen: false,
@@ -183,6 +202,23 @@ function InstaTrackApp() {
     assetsLink: '',
     description: '',
   });
+  
+  const [uploadState, setUploadState] = useState({});
+  const [sharingAccId, setSharingAccId] = useState(null);
+  const [pendingDone, setPendingDone] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pendingDone');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error("Failed to load pendingDone from localStorage", e);
+      return {};
+    }
+  });
+
+  // Sync pendingDone to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('pendingDone', JSON.stringify(pendingDone));
+  }, [pendingDone]);
 
   const fetchData = async () => {
     try {
@@ -362,13 +398,16 @@ function InstaTrackApp() {
   };
 
   const handleCheckboxClick = (accId, date, index, existingPost) => {
+    const acc = accounts.find(a => (a.id || a._id) === accId);
     setPostModal({
       isOpen: true,
       accountId: accId,
       date: date,
       index: index,
       link: existingPost?.link || '',
-      isEditing: !!existingPost
+      isEditing: !!existingPost,
+      assetsLink: acc?.assetsLink || '',
+      videoIndex: acc?.videoIndex || 1,
     });
   };
 
@@ -390,7 +429,7 @@ function InstaTrackApp() {
         accountId: postModal.accountId,
         date: postModal.date,
         index: postModal.index,
-        link: getPlatformId(postModal.link),
+        link: postModal.link,
       });
       setPosts(prev => {
         const index = prev.findIndex(p => p.accountId === savedPost.accountId && p.date === savedPost.date && p.index === savedPost.index);
@@ -402,8 +441,244 @@ function InstaTrackApp() {
         return [...prev, savedPost];
       });
       setPostModal(prev => ({ ...prev, isOpen: false }));
+
+      if (!postModal.isEditing) {
+        const acc = accounts.find(a => (a.id || a._id) === postModal.accountId);
+        if (acc && acc.assetsLink) {
+          const updatedAcc = await api.updateAccount(acc.id || acc._id, {
+            videoIndex: (acc.videoIndex || 1) + 1
+          });
+          setAccounts(prev => prev.map(a => (a.id || a._id) === (acc.id || acc._id) ? updatedAcc : a));
+        }
+      }
     } catch (error) {
       handleAppError(error);
+    }
+  };
+
+  const handleLinkR2 = async (accId) => {
+    const acc = accounts.find(a => (a.id || a._id) === accId);
+    if (!acc) return;
+    const currentPrefix = acc.r2Prefix || '';
+    const input = prompt(
+      `Link Cloudflare R2 folder to @${acc.username}\n\nEnter the FULL Cloudflare URL (e.g., https://content.thethousandways.com/folder_name):`,
+      currentPrefix
+    );
+    if (input === null) return;
+    const r2Prefix = input.trim();
+    if (!r2Prefix || !r2Prefix.startsWith('https://')) {
+      alert('A full Cloudflare URL starting with https:// is required');
+      return;
+    }
+
+    const countInput = prompt(
+      `How many videos are in the "${r2Prefix}" folder?\n\n(Leave blank to AUTO-DETECT from folder)`,
+      ''
+    );
+    if (countInput === null) return;
+
+    const body = { r2Prefix };
+    if (countInput.trim() !== '') {
+      const parsed = parseInt(countInput.trim(), 10);
+      if (!isNaN(parsed) && parsed >= 0) {
+        body.videoCount = parsed;
+      }
+    }
+
+    const indexInput = prompt(
+      `Starting Video Index (which video to post next)?\n\n(Leave blank to keep current index: ${acc.videoIndex || 1})`,
+      ''
+    );
+    if (indexInput === null) return;
+    if (indexInput.trim() !== '') {
+      const parsed = parseInt(indexInput.trim(), 10);
+      if (!isNaN(parsed) && parsed >= 1) {
+        body.videoIndex = parsed;
+      }
+    }
+
+    try {
+      const data = await api.linkR2(accId, body);
+      if (data.warning) {
+        alert(data.warning);
+      }
+      setAccounts(prev => prev.map(a => (a.id || a._id) === accId ? { ...a, ...data } : a));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleVideoUpload = async (accId, files) => {
+    if (!files || files.length === 0) return;
+    const allFiles = Array.from(files);
+    const videoFiles = allFiles
+      .filter(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(f.name))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+    const captionMap = {};
+    const txtFiles = allFiles.filter(f => /\.txt$/i.test(f.name));
+    txtFiles.forEach(f => {
+      const baseName = f.name.replace(/\.[^.]+$/, '');
+      captionMap[baseName] = f;
+    });
+
+    if (videoFiles.length === 0 && txtFiles.length > 0) {
+      setUploadState(prev => ({
+        ...prev,
+        [accId]: { progress: 0, uploading: true, error: '', success: '', current: 1, total: txtFiles.length }
+      }));
+      try {
+        for (let i = 0; i < txtFiles.length; i++) {
+          const tf = txtFiles[i];
+          const videoNumber = tf.name.replace(/\.txt$/i, '');
+          setUploadState(prev => ({
+            ...prev,
+            [accId]: { ...prev[accId], current: i + 1, progress: Math.round(((i) / txtFiles.length) * 100) }
+          }));
+          const { uploadUrl: capUploadUrl } = await api.getCaptionUploadUrl(accId, videoNumber);
+          await fetch(capUploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/plain' },
+            body: tf,
+          });
+        }
+        const msg = `${txtFiles.length} caption${txtFiles.length > 1 ? 's' : ''} uploaded!`;
+        setUploadState(prev => ({ ...prev, [accId]: { progress: 100, uploading: false, error: '', success: msg, current: txtFiles.length, total: txtFiles.length } }));
+        setTimeout(() => setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], success: '' } })), 4000);
+      } catch (err) {
+        setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], uploading: false, error: err.message } }));
+      }
+      return;
+    }
+
+    if (videoFiles.length === 0) return;
+
+    const total = videoFiles.length;
+    setUploadState(prev => ({
+      ...prev,
+      [accId]: { progress: 0, uploading: true, error: '', success: '', current: 1, total }
+    }));
+
+    let lastVideoNumber = 0;
+    try {
+      for (let i = 0; i < videoFiles.length; i++) {
+        const file = videoFiles[i];
+        const fileNum = i + 1;
+        setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], current: fileNum, progress: 0 } }));
+        const { uploadUrl, videoNumber } = await api.getUploadUrl(accId, file.name);
+
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 100);
+              setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], progress: pct } }));
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`Upload failed: ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error(`Network error`));
+          xhr.send(file);
+        });
+
+        await api.confirmUpload(accId, videoNumber);
+
+        const videoBaseName = file.name.replace(/\.[^.]+$/, '');
+        const captionFile = captionMap[videoBaseName];
+        if (captionFile) {
+          try {
+            const { uploadUrl: capUploadUrl } = await api.getCaptionUploadUrl(accId, videoNumber);
+            await fetch(capUploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'text/plain' },
+              body: captionFile,
+            });
+          } catch (capErr) {
+            console.warn(`Caption upload failed:`, capErr);
+          }
+        }
+        lastVideoNumber = videoNumber;
+        setAccounts(prev => prev.map(a => (a.id || a._id) === accId ? { ...a, videoCount: videoNumber } : a));
+      }
+      const msg = total === 1 ? `Video #${lastVideoNumber} uploaded!` : `${total} videos uploaded! (#${lastVideoNumber - total + 1} → #${lastVideoNumber})`;
+      setUploadState(prev => ({ ...prev, [accId]: { progress: 100, uploading: false, error: '', success: msg, current: total, total } }));
+      setTimeout(() => setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], success: '' } })), 4000);
+    } catch (err) {
+      setUploadState(prev => ({ ...prev, [accId]: { ...prev[accId], uploading: false, error: err.message } }));
+    }
+  };
+
+  const handlePostNext = async (accId) => {
+    setSharingAccId(accId);
+    try {
+      const data = await api.getNextVideo(accId);
+      const videoNumber = data.currentVideoNumber;
+
+      try {
+        const captionRes = await api.getCaption(accId, videoNumber);
+        if (captionRes.caption) {
+          await navigator.clipboard.writeText(captionRes.caption);
+        }
+      } catch (e) {
+        console.warn('Could not copy caption:', e);
+      }
+
+      if (window.isSecureContext && navigator.share) {
+        try {
+          const videoRes = await fetch(`${API_BASE_URL}/accounts/${accId}/video/${videoNumber}`);
+          if (videoRes.ok) {
+            const blob = await videoRes.blob();
+            const file = new File([blob], `video_${videoNumber}.mp4`, { type: 'video/mp4' });
+            if (navigator.canShare?.({ files: [file] })) {
+              await navigator.share({ files: [file], title: `video_${videoNumber}.mp4` });
+              setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+              setSharingAccId(null);
+              return;
+            }
+          }
+        } catch (shareErr) {
+          if (shareErr.name === 'AbortError') {
+            setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+            setSharingAccId(null);
+            return;
+          }
+        }
+      }
+      window.open(data.videoUrl, '_blank');
+      setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+      setSharingAccId(null);
+    } catch (err) {
+      alert(err.message);
+      setSharingAccId(null);
+    }
+  };
+
+  const handleMarkDone = async (accId) => {
+    try {
+      const data = await api.markPostDone(accId, selectedDate);
+      if (data.post) {
+        setPosts(prev => {
+          const exists = prev.findIndex(p => p.accountId === accId && p.date === selectedDate && p.index === data.post.index);
+          if (exists > -1) {
+            const next = [...prev];
+            next[exists] = data.post;
+            return next;
+          }
+          return [...prev, data.post];
+        });
+      }
+      setAccounts(prev => prev.map(a => (a.id || a._id) === accId ? { ...a, videoIndex: data.nextVideoNumber } : a));
+      setPendingDone(prev => {
+        const next = { ...prev };
+        delete next[accId];
+        return next;
+      });
+    } catch (err) {
+      alert(err.message);
     }
   };
 
@@ -434,7 +709,15 @@ function InstaTrackApp() {
 
   const filteredAccounts = useMemo(() => {
     if (!selectedProjectId) return [];
-    let accs = accounts.filter(a => a.projectId === selectedProjectId);
+    
+    let accs = accounts;
+    
+    // If filtering by a specific handler, show all their accounts regardless of project
+    // Otherwise, restrict to the selected project
+    if (selectedFilterHandlerId === 'all' || selectedFilterHandlerId === 'unassigned') {
+      accs = accs.filter(a => a.projectId === selectedProjectId);
+    }
+    
     if (selectedFilterHandlerId !== 'all') {
       if (selectedFilterHandlerId === 'unassigned') {
         accs = accs.filter(a => !a.handlerId);
@@ -442,6 +725,7 @@ function InstaTrackApp() {
         accs = accs.filter(a => a.handlerId === selectedFilterHandlerId);
       }
     }
+    
     return accs;
   }, [accounts, selectedProjectId, selectedFilterHandlerId]);
 
@@ -538,29 +822,45 @@ function InstaTrackApp() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-sm bg-white rounded-[32px] p-8 shadow-2xl border border-stone-200">
-              <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6"><Plus className="w-6 h-6 text-emerald-500" /></div>
-              <h3 className="text-xl font-bold tracking-tight text-stone-900 mb-2">Video Post #{postModal.index}</h3>
-              <p className="text-stone-500 text-sm leading-relaxed mb-6">Enter video details for tracking.</p>
+              {/* Sequential Posting Actions */}
+              {!postModal.isEditing && (postModal.assetsLink || postModal.directLink) && (
+                <div className="space-y-3 mb-8">
+                  <a
+                    href={postModal.directLink || postModal.assetsLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all group"
+                  >
+                    <ExternalLink className="w-5 h-5" />
+                    {postModal.directLink ? `Open Direct Video #${postModal.videoIndex}` : `Open Folder for Video #${postModal.videoIndex}`}
+                  </a>
+                  
+                  <a
+                    href={(() => {
+                      const acc = accounts.find(a => (a.id || a._id) === postModal.accountId);
+                      if (acc?.platform === 'instagram') return 'https://www.instagram.com/reels/create/';
+                      if (acc?.platform === 'tiktok') return 'https://www.tiktok.com/upload';
+                      if (acc?.platform === 'youtube') return 'https://studio.youtube.com/';
+                      return '#';
+                    })()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-3 w-full py-3 bg-stone-100 text-stone-600 rounded-2xl font-bold hover:bg-stone-200 transition-all"
+                  >
+                    Open {accounts.find(a => (a.id || a._id) === postModal.accountId)?.platform || 'Platform'}
+                  </a>
+                </div>
+              )}
 
               <form onSubmit={submitPost} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Video Link</label>
-                  <input autoFocus type="text" placeholder="https://instagram.com/p/..." value={postModal.link} onChange={(e) => setPostModal({ ...postModal, link: e.target.value })} className="w-full bg-stone-50 p-3 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm" />
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 ml-1">Paste Final Video Link</label>
+                  <input autoFocus type="text" placeholder="https://instagram.com/p/..." value={postModal.link} onChange={(e) => setPostModal({ ...postModal, link: e.target.value })} className="w-full bg-stone-50 p-4 rounded-xl border-none focus:ring-2 focus:ring-stone-900 outline-none text-sm font-medium" />
                 </div>
                 <div className="flex gap-3 pt-2">
-                  {postModal.isEditing && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePost(postModal.accountId, postModal.date, postModal.index)}
-                      className="px-4 py-3 bg-red-50 text-red-500 rounded-2xl font-medium text-sm hover:bg-red-100 transition-colors"
-                      title="Delete post"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  )}
-                  <button type="button" onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="flex-1 px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-medium text-sm hover:bg-stone-200 transition-colors">Cancel</button>
-                  <button type="submit" className="flex-1 px-4 py-3 bg-stone-900 text-white rounded-2xl font-medium text-sm hover:bg-stone-800 shadow-md transition-all">
-                    {postModal.isEditing ? 'Update Post' : 'Save Post'}
+                  <button type="button" onClick={() => setPostModal(prev => ({ ...prev, isOpen: false }))} className="flex-1 px-4 py-4 bg-stone-100 text-stone-400 rounded-2xl font-bold text-sm hover:bg-stone-200 transition-colors uppercase tracking-widest">Cancel</button>
+                  <button type="submit" className="flex-[2] px-4 py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 shadow-xl transition-all uppercase tracking-widest">
+                    {postModal.isEditing ? 'Update Tracking' : 'Confirm Tracked'}
                   </button>
                 </div>
               </form>
@@ -632,6 +932,7 @@ function InstaTrackApp() {
         )}
       </AnimatePresence>
 
+
       <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-stone-200">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
@@ -677,7 +978,16 @@ function InstaTrackApp() {
             </div>
 
           </div>
-          <div className="hidden sm:block text-sm text-stone-400 font-medium tracking-tight">MERN Activity Tracker</div>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/"
+              className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-stone-100 text-stone-600 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Updates Page
+            </Link>
+            <div className="hidden sm:block text-sm text-stone-400 font-medium tracking-tight">MERN Activity Tracker</div>
+          </div>
         </div>
       </header>
 
@@ -850,30 +1160,102 @@ function InstaTrackApp() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredAccounts.map((acc) => (
                   <motion.div key={acc.id || acc._id} layout className="bg-white p-6 rounded-3xl shadow-sm border border-stone-200 group">
-                    <div className="flex items-center justify-between mb-6">
-                      <div className="flex items-center gap-3">
-                        <div className="cursor-pointer relative group/icon" onClick={() => openEditModal(acc)} title="Edit account">
+                    <div className="flex items-start justify-between mb-6">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Platform Icon with Edit overlay */}
+                        <div className="cursor-pointer relative group/icon shrink-0" onClick={() => openEditModal(acc)} title="Edit account">
                           <PlatformIcon platform={acc.platform} />
                           <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-sm border border-stone-200 opacity-0 group-hover/icon:opacity-100 transition-opacity">
                             <Pencil className="w-2.5 h-2.5 text-stone-500" />
                           </div>
                         </div>
-                        <div className="flex flex-col cursor-pointer hover:opacity-70 transition-opacity" onClick={() => viewAccountHistory(acc)}>
-                          <span className="font-bold text-stone-900 tracking-tight">{acc.name || `@${acc.username}`}</span>
-                          <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">
+
+                        {/* Account Info */}
+                        <div className="flex flex-col min-w-0 cursor-pointer hover:opacity-70 transition-opacity" onClick={() => viewAccountHistory(acc)}>
+                          <span className="font-bold text-stone-900 tracking-tight truncate">{acc.name || `@${acc.username}`}</span>
+                          <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider truncate">
                             {(() => {
-                              const handlerName = acc.handlerId ? handlers.find(h => (h.id || h._id) === acc.handlerId)?.name : null;
-                              if (handlerName && handlerName.toLowerCase() === acc.ownerName.toLowerCase()) {
-                                return handlerName;
+                              const hnd = acc.handlerId ? handlers.find(h => (h.id || h._id) === acc.handlerId) : null;
+                              if (hnd && hnd.name.toLowerCase() === acc.ownerName.toLowerCase()) {
+                                return hnd.name;
                               }
-                              return `${acc.ownerName}${handlerName ? ` • Handler: ${handlerName}` : ''}`;
+                              return `${acc.ownerName}${hnd ? ` • Handler: ${hnd.name}` : ''}`;
                             })()}
                           </span>
                         </div>
                       </div>
-                      <ProfileLinkButton username={acc.username} platform={acc.platform} />
-                      <button onClick={() => deleteAccount(acc.id || acc._id)} className="opacity-0 group-hover:opacity-100 p-2 text-stone-300 hover:text-red-500 transition-all"><Trash2 className="w-4 h-4" /></button>
+
+                      {/* Unified Action Cluster */}
+                      <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                        <ProfileLinkButton username={acc.username} platform={acc.platform} />
+                        
+                        {/* Folder Upload */}
+                        <label className={`cursor-pointer p-1.5 rounded-full transition-all ${uploadState[acc.id || acc._id]?.uploading ? 'text-indigo-600 bg-indigo-50' : 'text-stone-400 hover:text-stone-900 hover:bg-stone-50'}`}>
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={uploadState[acc.id || acc._id]?.uploading}
+                            webkitdirectory="true"
+                            directory="true"
+                            onChange={(e) => {
+                              if (e.target.files?.length) handleVideoUpload(acc.id || acc._id, e.target.files);
+                              e.target.value = '';
+                            }}
+                          />
+                          {uploadState[acc.id || acc._id]?.uploading ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Plus className="w-3.5 h-3.5" />
+                          )}
+                        </label>
+
+                        {/* Link R2 folder */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleLinkR2(acc.id || acc._id); }}
+                          title="Link Cloudflare R2 folder"
+                          className={`p-1.5 rounded-full transition-all ${
+                            acc.r2Prefix
+                              ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
+                              : 'text-stone-400 hover:text-stone-900 hover:bg-stone-50'
+                          }`}
+                        >
+                          <Link2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button onClick={() => deleteAccount(acc.id || acc._id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-stone-300 hover:text-red-500 transition-all" title="Delete Account">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Upload Progress Status (Progress bar) */}
+                    <AnimatePresence>
+                      {uploadState[acc.id || acc._id] && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mb-4 overflow-hidden">
+                          <div className={`p-3 rounded-2xl border ${uploadState[acc.id || acc._id].error ? 'bg-red-50 border-red-100' : 'bg-indigo-50 border-indigo-100'}`}>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className={`text-[10px] font-bold uppercase tracking-widest ${uploadState[acc.id || acc._id].error ? 'text-red-600' : 'text-indigo-600'}`}>
+                                {uploadState[acc.id || acc._id].error ? 'Upload Error' : uploadState[acc.id || acc._id].success ? 'Success!' : `Uploading ${uploadState[acc.id || acc._id].current}/${uploadState[acc.id || acc._id].total}`}
+                              </span>
+                              {!uploadState[acc.id || acc._id].uploading && (
+                                <button onClick={() => setUploadState(prev => { const n = { ...prev }; delete n[acc.id || acc._id]; return n; })} className="text-stone-400 hover:text-stone-600"><Plus className="w-3.5 h-3.5 rotate-45" /></button>
+                              )}
+                            </div>
+                            {uploadState[acc.id || acc._id].uploading && (
+                              <div className="w-full bg-white/50 h-1.5 rounded-full overflow-hidden">
+                                <motion.div className="h-full bg-indigo-500" animate={{ width: `${uploadState[acc.id || acc._id].progress}%` }} />
+                              </div>
+                            )}
+                            {(uploadState[acc.id || acc._id].error || uploadState[acc.id || acc._id].success) && (
+                              <p className={`text-[10px] font-medium ${uploadState[acc.id || acc._id].error ? 'text-red-500' : 'text-emerald-600'}`}>
+                                {uploadState[acc.id || acc._id].error || uploadState[acc.id || acc._id].success}
+                              </p>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
                     <div className="flex gap-2">
                       {[1, 2, 3].map((i) => {
                         const post = posts.find(p => p.accountId === (acc.id || acc._id) && p.date === selectedDate && p.index === i);
@@ -882,66 +1264,62 @@ function InstaTrackApp() {
                             <button onClick={() => handleCheckboxClick(acc.id || acc._id, selectedDate, i, post)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${post ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200' : 'bg-stone-50 text-stone-300 hover:bg-stone-100'}`}>
                               {post ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
                             </button>
-                            {post && (
-                              <div className="flex flex-col items-center gap-0.5">
-                                {post.link && (
-                                  <a
-                                    href={getFullUrl(post.link, acc.platform)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="p-1 text-stone-400 hover:text-stone-900 transition-colors"
-                                    title="View post"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </a>
-                                )}
-                                <span className="text-[9px] font-bold text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                                  <Eye className="w-2.5 h-2.5" /> {(post.viewsCount || 0).toLocaleString()}
-                                </span>
-                                {post.submittedAt && (
-                                  <span className="text-[7px] font-bold text-stone-400 uppercase tracking-tighter">
-                                    {format(new Date(post.submittedAt), 'hh:mm a')}
-                                  </span>
-                                )}
-                              </div>
+                            {post && post.submittedAt && (
+                              <span className="text-[7px] font-bold text-stone-400 uppercase tracking-tighter">
+                                {format(new Date(post.submittedAt), 'hh:mm a')}
+                              </span>
                             )}
                           </div>
                         );
                       })}
                     </div>
-                    <div className="flex gap-2 mt-3">
-                      {acc.assetsLink && (
-                        <a
-                          href={acc.assetsLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-50 text-amber-700 rounded-2xl text-xs font-bold hover:bg-amber-100 transition-all border border-amber-200"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" /> Assets
-                        </a>
-                      )}
+
+                    <div className="mt-4 flex flex-col gap-2">
+                      {/* Description Display */}
                       {acc.description && (
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(acc.description).then(() => {
-                              setCopiedAccountId(acc.id || acc._id);
-                              setTimeout(() => setCopiedAccountId(null), 2000);
-                            });
-                          }}
-                          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border ${
-                            copiedAccountId === (acc.id || acc._id)
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'
-                          }`}
-                        >
-                          {copiedAccountId === (acc.id || acc._id) ? (
-                            <><Check className="w-3.5 h-3.5" /> Copied!</>
-                          ) : (
-                            <><Copy className="w-3.5 h-3.5" /> Copy</>
-                          )}
-                        </button>
+                        <p className="text-[10px] text-stone-400 italic px-1 line-clamp-2 mb-2" title={acc.description}>
+                          {acc.description}
+                        </p>
                       )}
+
+                      {/* Sequential Posting Flow UI */}
+                      <div className="pt-4 border-t border-stone-100">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Post Flow</span>
+                          {acc.r2Prefix && (
+                            <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">R2 Linked</span>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2">
+                          {pendingDone[acc.id || acc._id] ? (
+                            <button
+                              onClick={() => handleMarkDone(acc.id || acc._id)}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 bg-red-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all animate-pulse text-sm"
+                            >
+                              <CheckCheck className="w-4 h-4 " /> Confirm Done
+                            </button>
+                          ) : (
+                            <button
+                              disabled={sharingAccId === (acc.id || acc._id)}
+                              onClick={() => handlePostNext(acc.id || acc._id)}
+                              className="flex-1 flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all disabled:opacity-50 text-sm"
+                            >
+                              {sharingAccId === (acc.id || acc._id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                              Post Next Video
+                            </button>
+                          )}
+                          {pendingDone[acc.id || acc._id] && (
+                            <button
+                              onClick={() => handlePostNext(acc.id || acc._id)}
+                              className="px-4 py-3 bg-stone-100 text-stone-600 rounded-2xl font-bold hover:bg-stone-200 transition-all"
+                              title="Retry Opening Video"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </motion.div>
                 ))}

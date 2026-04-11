@@ -1,4 +1,4 @@
-const API_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5001/api' : '/api';
+const API_BASE_URL = '/api';
 
 async function handleResponse(res) {
   if (!res.ok) {
@@ -91,5 +91,49 @@ export const api = {
   async deletePost(accountId, date, index) {
     const res = await fetch(`${API_BASE_URL}/posts/${accountId}/${date}/${index}`, { method: 'DELETE' });
     if (!res.ok) throw new Error(`Failed to delete post: ${res.status}`);
+  },
+
+  // R2 Video Upload
+  async getUploadUrl(accountId, filename) {
+    const res = await fetch(`${API_BASE_URL}/accounts/${accountId}/upload-url?filename=${encodeURIComponent(filename)}`);
+    return handleResponse(res);
+  },
+  async confirmUpload(accountId, videoNumber) {
+    const res = await fetch(`${API_BASE_URL}/accounts/${accountId}/confirm-upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoNumber }),
+    });
+    return handleResponse(res);
+  },
+  async getCaptionUploadUrl(accountId, videoNumber) {
+    const res = await fetch(`${API_BASE_URL}/accounts/${accountId}/caption-upload-url?videoNumber=${videoNumber}`);
+    return handleResponse(res);
+  },
+  async linkR2(accountId, data) {
+    const res = await fetch(`${API_BASE_URL}/accounts/${accountId}/link-r2`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  // Sequential Posting
+  async getNextVideo(accountId) {
+    const res = await fetch(`${API_BASE_URL}/accounts/${accountId}/next-video`);
+    return handleResponse(res);
+  },
+  async markPostDone(accountId, date) {
+    const res = await fetch(`${API_BASE_URL}/accounts/${accountId}/next-video/mark-done`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date }),
+    });
+    return handleResponse(res);
+  },
+  async getCaption(accountId, videoNumber) {
+    const res = await fetch(`${API_BASE_URL}/accounts/${accountId}/caption/${videoNumber}`);
+    return handleResponse(res);
   },
 };

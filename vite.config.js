@@ -2,12 +2,30 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
-// https://vite.dev/config/
 export default defineConfig({
+  server: {
+    host: true,
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      host: '172.20.10.6',
+      protocol: 'wss'          // wss for HTTPS
+    },
+    // Proxy API calls to the backend — avoids mixed content (HTTPS page → HTTP API)
+    proxy: {
+      '/api/': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+      }
+    }
+  },
+
   plugins: [
     react(),
     tailwindcss(),
+    basicSsl(),                // 🔒 generates self-signed cert for HTTPS
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['pwa-192.png', 'pwa-512.png'],
