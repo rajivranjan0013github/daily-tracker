@@ -191,6 +191,7 @@ function InstaTrackApp() {
     isOpen: false,
     account: null,
   });
+  const [historyTab, setHistoryTab] = useState('history');
   const [editModal, setEditModal] = useState({
     isOpen: false,
     account: null,
@@ -683,6 +684,7 @@ function InstaTrackApp() {
   };
 
   const viewAccountHistory = (account) => {
+    setHistoryTab('history');
     setHistoryModal({
       isOpen: true,
       account,
@@ -740,7 +742,7 @@ function InstaTrackApp() {
     }).map(d => format(d, 'yyyy-MM-dd'));
 
     return last7Days.map(date => {
-      const dayPosts = posts.filter(p => p.date === date && filteredAccounts.some(a => (a.id || a._id) === p.accountId));
+      const dayPosts = posts.filter(p => p.date === date && (p.index || 0) <= 3 && filteredAccounts.some(a => (a.id || a._id) === p.accountId));
       const target = filteredAccounts.length * 3;
       return {
         date: format(new Date(date), 'MMM dd'),
@@ -751,18 +753,36 @@ function InstaTrackApp() {
   }, [posts, filteredAccounts]);
 
   const todayStats = useMemo(() => {
-    const todayPosts = posts.filter(p => p.date === selectedDate && filteredAccounts.some(a => (a.id || a._id) === p.accountId));
+    const todayPosts = posts.filter(p => p.date === selectedDate && (p.index || 0) <= 3 && filteredAccounts.some(a => (a.id || a._id) === p.accountId));
     const target = filteredAccounts.length * 3;
     const totalViews = todayPosts.reduce((sum, p) => sum + (p.viewsCount || 0), 0);
     return { count: todayPosts.length, target, totalViews };
   }, [posts, filteredAccounts, selectedDate]);
 
+  const viewStats = useMemo(() => {
+    const totalViews7d = filteredAccounts.reduce((sum, a) => sum + (a.viewsLast7Days || 0), 0);
+    const lastSync = filteredAccounts.reduce((latest, a) => {
+      if (!a.lastScrapedAt) return latest;
+      const d = new Date(a.lastScrapedAt);
+      return !latest || d > latest ? d : latest;
+    }, null);
+    return { totalViews7d, lastSync };
+  }, [filteredAccounts]);
+
   const accountPosts = useMemo(() => {
     if (!historyModal.account) return [];
     const accId = historyModal.account.id || historyModal.account._id;
     return posts
-      .filter(p => p.accountId === accId)
+      .filter(p => p.accountId === accId && (p.index || 0) <= 3)
       .sort((a, b) => b.date.localeCompare(a.date) || b.index - a.index);
+  }, [posts, historyModal.account]);
+
+  const accountScrapedPosts = useMemo(() => {
+    if (!historyModal.account) return [];
+    const accId = historyModal.account.id || historyModal.account._id;
+    return posts
+      .filter(p => p.accountId === accId && (p.index || 0) >= 100)
+      .sort((a, b) => b.date.localeCompare(a.date));
   }, [posts, historyModal.account]);
 
   if (loading) {
@@ -875,7 +895,7 @@ function InstaTrackApp() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setHistoryModal({ ...historyModal, isOpen: false })} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-lg bg-white rounded-[32px] p-8 shadow-2xl border border-stone-200 overflow-hidden flex flex-col max-h-[80vh]">
-              <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-stone-100 rounded-2xl flex items-center justify-center text-stone-600 font-bold text-sm">@</div>
                   <div>
@@ -886,47 +906,131 @@ function InstaTrackApp() {
                 <button onClick={() => setHistoryModal({ ...historyModal, isOpen: false })} className="p-2 hover:bg-stone-50 rounded-xl transition-colors"><Plus className="w-6 h-6 text-stone-400 rotate-45" /></button>
               </div>
 
-              <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                {accountPosts.length === 0 ? (
-                  <div className="text-center py-10">
-                    <p className="text-stone-400 text-sm italic">No posts tracked yet for this account.</p>
-                  </div>
-                ) : (
-                  accountPosts.map((post, idx) => (
-                    <div key={idx} className="bg-stone-50 p-4 rounded-2xl flex items-center justify-between group transition-colors hover:bg-stone-100 border border-transparent hover:border-stone-200">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-xs font-bold text-stone-400 shadow-sm border border-stone-100">#{post.index}</div>
-                        <div>
-                          <p className="text-sm font-bold text-stone-900">
-                            {format(new Date(post.date + 'T00:00:00'), 'MMM dd, yyyy')}
-                            {post.submittedAt && (
-                              <span className="text-[10px] text-stone-400 font-normal ml-2 lowercase">
-                                at {format(new Date(post.submittedAt), 'hh:mm a')}
-                              </span>
-                            )}
-                          </p>
-                          {post.link ? (
-                            <a href={getFullUrl(post.link)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-stone-400 hover:text-stone-900 transition-colors flex items-center gap-1 underline underline-offset-2 break-all max-w-[150px] sm:max-w-xs">{post.link}</a>
-                          ) : (
-                            <p className="text-[10px] text-stone-300 italic">No link provided</p>
-                          )}
-                        </div>
+              {/* Tab Toggle */}
+              <div className="flex gap-1 p-1 bg-stone-100 rounded-2xl mb-6">
+                <button
+                  onClick={() => setHistoryTab('history')}
+                  className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-xl transition-all ${historyTab === 'history' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-700'}`}
+                >
+                  Post History
+                </button>
+                <button
+                  onClick={() => setHistoryTab('analytics')}
+                  className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-xl transition-all ${historyTab === 'analytics' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400 hover:text-stone-700'}`}
+                >
+                  7-Day Analytics
+                </button>
+              </div>
+
+              {historyTab === 'history' ? (
+                <>
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                    {accountPosts.length === 0 ? (
+                      <div className="text-center py-10">
+                        <p className="text-stone-400 text-sm italic">No posts tracked yet for this account.</p>
                       </div>
-                      <div className="text-right">
-                        <div className="flex items-center gap-1.5 justify-end">
-                          <Eye className="w-3 h-3 text-stone-400" />
-                          <span className="text-sm font-bold text-stone-900">{(post.viewsCount || 0).toLocaleString()}</span>
+                    ) : (
+                      accountPosts.map((post, idx) => (
+                        <div key={idx} className="bg-stone-50 p-4 rounded-2xl flex items-center justify-between group transition-colors hover:bg-stone-100 border border-transparent hover:border-stone-200">
+                          <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-xs font-bold text-stone-400 shadow-sm border border-stone-100">#{post.index}</div>
+                            <div>
+                              <p className="text-sm font-bold text-stone-900">
+                                {format(new Date(post.date + 'T00:00:00'), 'MMM dd, yyyy')}
+                                {post.submittedAt && (
+                                  <span className="text-[10px] text-stone-400 font-normal ml-2 lowercase">
+                                    at {format(new Date(post.submittedAt), 'hh:mm a')}
+                                  </span>
+                                )}
+                              </p>
+                              {post.link ? (
+                                <a href={getFullUrl(post.link)} target="_blank" rel="noopener noreferrer" className="text-[10px] text-stone-400 hover:text-stone-900 transition-colors flex items-center gap-1 underline underline-offset-2 break-all max-w-[150px] sm:max-w-xs">{post.link}</a>
+                              ) : (
+                                <p className="text-[10px] text-stone-300 italic">No link provided</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <Eye className="w-3 h-3 text-stone-400" />
+                              <span className="text-sm font-bold text-stone-900">{(post.viewsCount || 0).toLocaleString()}</span>
+                            </div>
+                            <p className="text-[10px] text-stone-400 uppercase font-bold tracking-widest mt-0.5">Views</p>
+                          </div>
                         </div>
-                        <p className="text-[10px] text-stone-400 uppercase font-bold tracking-widest mt-0.5">Views</p>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-8 pt-6 border-t border-stone-100 flex justify-between items-center text-xs">
+                    <span className="text-stone-400 font-medium">Total Posts: <span className="text-stone-900 font-bold">{accountPosts.length}</span></span>
+                    <span className="text-stone-400 font-medium">Total Views: <span className="text-stone-900 font-bold">{accountPosts.reduce((sum, p) => sum + (p.viewsCount || 0), 0).toLocaleString()}</span></span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+                    {accountScrapedPosts.length === 0 ? (
+                      <div className="text-center py-10">
+                        <p className="text-stone-400 text-sm italic">No scraped data yet. Run the scraper with --sync.</p>
+                      </div>
+                    ) : (
+                      accountScrapedPosts.map((post, idx) => (
+                        <div key={idx} className="bg-stone-50 p-3 rounded-2xl border border-transparent hover:border-stone-200 hover:bg-stone-100 transition-colors">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{post.date}</span>
+                                {post.isPinned && (
+                                  <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-100">Pinned</span>
+                                )}
+                              </div>
+                              {post.title && (
+                                <p className="text-xs text-stone-600 line-clamp-1 mb-1" title={post.title}>{post.title}</p>
+                              )}
+                              {post.link || post.postId ? (
+                                <a
+                                  href={post.link || getFullUrl(post.postId, historyModal.account?.platform)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] text-stone-400 hover:text-stone-900 underline underline-offset-2 break-all"
+                                >
+                                  {post.link || post.postId}
+                                </a>
+                              ) : null}
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <div className="flex items-center gap-1 justify-end mb-1">
+                                <Eye className="w-3 h-3 text-stone-400" />
+                                <span className="text-sm font-bold text-stone-900">{(post.viewsCount || 0).toLocaleString()}</span>
+                              </div>
+                              <div className="flex items-center gap-2 justify-end text-[10px] text-stone-400 font-medium">
+                                <span>♥ {(post.likes || 0).toLocaleString()}</span>
+                                <span>💬 {(post.comments || 0).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {accountScrapedPosts.length > 0 && (
+                    <div className="mt-6 pt-5 border-t border-stone-100 grid grid-cols-3 gap-3 text-center text-xs">
+                      <div className="bg-stone-50 rounded-2xl p-3">
+                        <p className="text-stone-400 font-bold uppercase tracking-widest mb-1">Views</p>
+                        <p className="text-stone-900 font-bold text-base">{accountScrapedPosts.reduce((s, p) => s + (p.views || p.viewsCount || 0), 0).toLocaleString()}</p>
+                      </div>
+                      <div className="bg-stone-50 rounded-2xl p-3">
+                        <p className="text-stone-400 font-bold uppercase tracking-widest mb-1">Likes</p>
+                        <p className="text-stone-900 font-bold text-base">{accountScrapedPosts.reduce((s, p) => s + (p.likes || 0), 0).toLocaleString()}</p>
+                      </div>
+                      <div className="bg-stone-50 rounded-2xl p-3">
+                        <p className="text-stone-400 font-bold uppercase tracking-widest mb-1">Comments</p>
+                        <p className="text-stone-900 font-bold text-base">{accountScrapedPosts.reduce((s, p) => s + (p.comments || 0), 0).toLocaleString()}</p>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-              <div className="mt-8 pt-6 border-t border-stone-100 flex justify-between items-center text-xs">
-                <span className="text-stone-400 font-medium">Total Posts: <span className="text-stone-900 font-bold">{accountPosts.length}</span></span>
-                <span className="text-stone-400 font-medium">Total Views: <span className="text-stone-900 font-bold">{accountPosts.reduce((sum, p) => sum + (p.viewsCount || 0), 0).toLocaleString()}</span></span>
-              </div>
+                  )}
+                </>
+              )}
             </motion.div>
           </div>
         )}
@@ -1033,22 +1137,24 @@ function InstaTrackApp() {
 
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-white p-8 rounded-[32px] shadow-sm border border-stone-200 flex flex-col justify-between">
                 <div>
-                  <p className="text-stone-400 text-sm font-medium mb-1">Total View Gain</p>
-                  <h3 className="text-5xl font-bold tracking-tight mb-2 text-stone-900">{todayStats.totalViews.toLocaleString()}</h3>
+                  <p className="text-stone-400 text-sm font-medium mb-1">Views (Last 7 Days)</p>
+                  <h3 className="text-5xl font-bold tracking-tight mb-2 text-stone-900">{viewStats.totalViews7d.toLocaleString()}</h3>
                   <p className="text-emerald-500 text-xs mt-4 mb-1 uppercase tracking-widest font-bold flex items-center gap-1">
-                    <Eye className="w-3 h-3" /> Growth Detected
+                    <Eye className="w-3 h-3" /> Scraped Reels
                   </p>
                   <div className="mt-4 p-4 bg-stone-50 rounded-2xl">
-                    <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mb-1">Avg Views/Post</p>
+                    <p className="text-[10px] text-stone-400 font-bold uppercase tracking-widest mb-1">Avg Views/Account</p>
                     <p className="text-lg font-bold text-stone-900">
-                      {todayStats.count > 0 ? Math.round(todayStats.totalViews / todayStats.count).toLocaleString() : 0}
+                      {filteredAccounts.length > 0 ? Math.round(viewStats.totalViews7d / filteredAccounts.length).toLocaleString() : 0}
                     </p>
                   </div>
                 </div>
                 <div className="pt-6 border-t border-stone-100 flex justify-between items-end">
                   <div>
-                    <p className="text-[10px] text-stone-400 uppercase tracking-widest font-bold mb-1">Reporting Date</p>
-                    <p className="text-sm font-bold text-stone-900">{format(new Date(selectedDate), 'MMM dd')}</p>
+                    <p className="text-[10px] text-stone-400 uppercase tracking-widest font-bold mb-1">Last Synced</p>
+                    <p className="text-sm font-bold text-stone-900">
+                      {viewStats.lastSync ? format(viewStats.lastSync, 'MMM dd, hh:mm a') : '—'}
+                    </p>
                   </div>
                   <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
                     <BarChart3 className="w-5 h-5 text-emerald-500" />
@@ -1227,6 +1333,20 @@ function InstaTrackApp() {
                         </button>
                       </div>
                     </div>
+
+                    {/* 7-Day Scraped Stats Badge */}
+                    {(acc.viewsLast7Days > 0 || acc.lastScrapedAt) && (
+                      <button
+                        onClick={() => { setHistoryTab('analytics'); setHistoryModal({ isOpen: true, account: acc }); }}
+                        className="w-full mb-4 flex items-center justify-between px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-2xl hover:bg-emerald-100 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-xs font-bold text-emerald-700">{(acc.viewsLast7Days || 0).toLocaleString()} views · 7d</span>
+                        </div>
+                        <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest">Details →</span>
+                      </button>
+                    )}
 
                     {/* Upload Progress Status (Progress bar) */}
                     <AnimatePresence>

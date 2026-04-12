@@ -15,6 +15,11 @@ const accountSchema = new mongoose.Schema({
   description: { type: String, default: '' },
   uid: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
+  // ── Scraper aggregate stats (last 7 days) ──────────────────────────────
+  viewsLast7Days:    { type: Number, default: 0 },
+  likesLast7Days:    { type: Number, default: 0 },
+  commentsLast7Days: { type: Number, default: 0 },
+  lastScrapedAt:     { type: Date },
 });
 
 export const Account = mongoose.model('Account', accountSchema);

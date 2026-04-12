@@ -509,6 +509,83 @@ app.get('/api/posts/:accountId/:date', async (req, res) => {
   }
 });
 
+// --- Scraper sync ---
+// POST /api/scrape/sync
+// Called by run_all.py after each scrape run.
+// Body: { platform, username, posts: [{postId, date, link, title, views, likes, comments, isPinned}] }
+// Upserts one VideoPost per scraped video and updates Account aggregate stats.
+app.post('/api/scrape/sync', async (req, res) => {
+  try {
+    const { platform, username, posts = [] } = req.body;
+    if (!platform || !username) {
+      return res.status(400).json({ error: 'platform and username are required' });
+    }
+
+    const account = await Account.findOne({
+      platform,
+      username: { $regex: new RegExp(`^${username}$`, 'i') },
+    });
+    if (!account) {
+      return res.status(404).json({ error: `Account @${username} not found on ${platform}` });
+    }
+
+    const synced = [];
+    for (const p of posts) {
+      if (!p.postId) continue;
+
+      // Reuse existing index if this post was synced before; otherwise assign next slot in 100+ range
+      const existing = await VideoPost.findOne({ accountId: account._id, postId: p.postId });
+      let idx = existing?.index;
+      if (idx == null) {
+        const maxPost = await VideoPost.findOne({
+          accountId: account._id,
+          date: p.date,
+          index: { $gte: 100 },
+        }).sort({ index: -1 });
+        idx = (maxPost?.index ?? 99) + 1;
+      }
+
+      const doc = await VideoPost.findOneAndUpdate(
+        { accountId: account._id, postId: p.postId },
+        {
+          $set: {
+            accountId:  account._id,
+            date:       p.date        || '',
+            index:      idx,
+            link:       p.link        || '',
+            title:      (p.title      || '').slice(0, 200),
+            viewsCount: p.views       || 0,
+            likes:      p.likes       || 0,
+            comments:   p.comments    || 0,
+            isPinned:   p.isPinned    || false,
+            postId:     p.postId,
+            scrapedAt:  new Date(),
+            uid:        'default_user',
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      synced.push(doc);
+    }
+
+    // Sum up 7-day aggregates from all posts passed in this sync call
+    const viewsLast7Days    = posts.reduce((s, p) => s + (p.views    || 0), 0);
+    const likesLast7Days    = posts.reduce((s, p) => s + (p.likes    || 0), 0);
+    const commentsLast7Days = posts.reduce((s, p) => s + (p.comments || 0), 0);
+
+    await Account.findByIdAndUpdate(account._id, {
+      viewsLast7Days,
+      likesLast7Days,
+      commentsLast7Days,
+      lastScrapedAt: new Date(),
+    });
+
+    res.json({ synced: synced.length, accountId: account._id, viewsLast7Days, likesLast7Days, commentsLast7Days });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
 });
