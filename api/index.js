@@ -124,18 +124,8 @@ app.get('/api/cron/notify', async (req, res) => {
   }
 
   try {
-    // Current hour in IST (UTC+5:30)
-    const nowUTC = new Date();
-    const istOffset = 5 * 60 + 30; // minutes
-    const istMs = nowUTC.getTime() + istOffset * 60 * 1000;
-    const istDate = new Date(istMs);
-    const currentHour = String(istDate.getUTCHours()).padStart(2, '0');
-    const currentHHMM = `${currentHour}:00`;
-
-    // Find handlers that have this hour in their schedule
     const handlers = await Handler.find({
       notificationsEnabled: true,
-      notificationTimes: currentHHMM,
       'pushSubscriptions.0': { $exists: true },
     });
 
@@ -172,7 +162,7 @@ app.get('/api/cron/notify', async (req, res) => {
       }
     }
 
-    res.json({ ok: true, handlersNotified: handlers.length, sent, failed, currentHour: currentHHMM });
+    res.json({ ok: true, handlersNotified: handlers.length, sent, failed });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
