@@ -28,6 +28,10 @@ export default defineConfig({
     basicSsl(),                // 🔒 generates self-signed cert for HTTPS
     VitePWA({
       registerType: 'autoUpdate',
+      // Use injectManifest so our custom sw.js (with push handler) is used
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'sw.js',
       includeAssets: ['pwa-192.png', 'pwa-512.png'],
       manifest: {
         name: 'TW',
@@ -48,6 +52,10 @@ export default defineConfig({
             type: 'image/png'
           }
         ]
+      },
+      injectManifest: {
+        swSrc: 'public/sw.js',
+        swDest: 'sw.js',
       }
     })
   ],

@@ -23,6 +23,9 @@ import {
   CheckCheck,
   RefreshCw,
   BarChart3,
+  Bell,
+  BellOff,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -74,6 +77,172 @@ const ProfileLinkButton = ({ username, platform }) => {
 
 
 const API_BASE_URL = '/api';
+
+const VAPID_PUBLIC_KEY = 'BHJA3mAcYm1zwyt7o4DrY6n5r9OWevS4Xhc-DWODqJk2sQEGoDh9grbHwsWP1pgwNcPKyZSFoWJYlRyPJReEwlU';
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+const REMINDER_TIMES = [
+  { label: '9:00 AM', value: '09:00' },
+  { label: '12:00 PM', value: '12:00' },
+  { label: '3:00 PM', value: '15:00' },
+  { label: '6:00 PM', value: '18:00' },
+  { label: '9:00 PM', value: '21:00' },
+];
+
+const NotificationPanel = ({ handlerId, onClose }) => {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [times, setTimes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('notifTimes') || '[]'); } catch { return []; }
+  });
+  const [permissionState, setPermissionState] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  );
+
+  useEffect(() => {
+    setEnabled(localStorage.getItem('notifEnabled') === 'true');
+  }, []);
+
+  const subscribe = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      alert('Push notifications are not supported in this browser.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const permission = await Notification.requestPermission();
+      setPermissionState(permission);
+      if (permission !== 'granted') {
+        alert('Notification permission denied. Please enable it in browser settings.');
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+      await fetch(`${API_BASE_URL}/notifications/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handlerId, subscription: sub.toJSON() }),
+      });
+      if (times.length > 0) {
+        await fetch(`${API_BASE_URL}/notifications/times`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ handlerId, times }),
+        });
+      }
+      localStorage.setItem('notifEnabled', 'true');
+      localStorage.setItem('notifEndpoint', sub.endpoint);
+      setEnabled(true);
+    } catch (err) {
+      alert('Failed to enable notifications: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const unsubscribe = async () => {
+    setLoading(true);
+    try {
+      const endpoint = localStorage.getItem('notifEndpoint');
+      if (endpoint) {
+        await fetch(`${API_BASE_URL}/notifications/unsubscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ handlerId, endpoint }),
+        });
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+      localStorage.removeItem('notifEnabled');
+      localStorage.removeItem('notifEndpoint');
+      setEnabled(false);
+    } catch (err) {
+      alert('Failed to disable: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveTimes = async (newTimes) => {
+    setTimes(newTimes);
+    localStorage.setItem('notifTimes', JSON.stringify(newTimes));
+    if (enabled && handlerId) {
+      await fetch(`${API_BASE_URL}/notifications/times`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handlerId, times: newTimes }),
+      });
+    }
+  };
+
+  const toggleTime = (value) => {
+    const next = times.includes(value) ? times.filter(t => t !== value) : [...times, value];
+    saveTimes(next);
+  };
+
+  return (
+    <div className="absolute right-0 top-12 z-50 w-72 bg-white border border-stone-200 rounded-2xl shadow-2xl p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <span className="font-bold text-sm text-stone-900">Post Reminders</span>
+        <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-900 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {permissionState === 'denied' ? (
+        <p className="text-xs text-red-500 font-medium">Notifications are blocked. Enable them in your browser site settings.</p>
+      ) : (
+        <button
+          onClick={enabled ? unsubscribe : subscribe}
+          disabled={loading}
+          className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+            enabled
+              ? 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+              : 'bg-stone-900 text-white hover:bg-stone-700'
+          }`}
+        >
+          {loading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : enabled ? (
+            <><BellOff className="w-4 h-4" /> Turn Off Reminders</>
+          ) : (
+            <><Bell className="w-4 h-4" /> Enable Reminders</>
+          )}
+        </button>
+      )}
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Remind me at (IST)</p>
+        <div className="flex flex-wrap gap-2">
+          {REMINDER_TIMES.map(({ label, value }) => (
+            <button
+              key={value}
+              onClick={() => toggleTime(value)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                times.includes(value)
+                  ? 'bg-emerald-500 text-white shadow-md shadow-emerald-100'
+                  : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[9px] text-stone-400">Select times → then Enable Reminders</p>
+      </div>
+    </div>
+  );
+};
  
 const Header = ({
   handlerId,
@@ -86,6 +255,9 @@ const Header = ({
   onLogout,
   accounts = []
 }) => {
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const notifEnabled = localStorage.getItem('notifEnabled') === 'true';
+
   return (
     <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-stone-200">
       <div className="max-w-2xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -107,6 +279,21 @@ const Header = ({
             >
               <Download className="w-4 h-4" /> Install App
             </button>
+          )}
+
+          {handlerId && (
+            <div className="relative">
+              <button
+                onClick={() => setNotifPanelOpen(o => !o)}
+                title="Post reminders"
+                className={`p-2 rounded-xl transition-all ${notifEnabled ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'}`}
+              >
+                {notifEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+              </button>
+              {notifPanelOpen && (
+                <NotificationPanel handlerId={handlerId} onClose={() => setNotifPanelOpen(false)} />
+              )}
+            </div>
           )}
 
           {handlerId && (

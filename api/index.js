@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import webPush from 'web-push';
 import { Project } from './models/Project.js';
 import { Handler } from './models/Handler.js';
 import { Account } from './models/Account.js';
@@ -35,6 +36,148 @@ mongoose.connect(MONGODB_URI)
 
 app.use(cors());
 app.use(express.json());
+
+// --- Web Push / VAPID setup ---
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webPush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:admin@thethousandways.com',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
+
+// --- Notification endpoints ---
+
+// Save a push subscription for a handler
+app.post('/api/notifications/subscribe', async (req, res) => {
+  try {
+    const { handlerId, subscription } = req.body;
+    if (!handlerId || !subscription?.endpoint) {
+      return res.status(400).json({ error: 'handlerId and subscription are required' });
+    }
+    const handler = await Handler.findOne({ handleId: handlerId, uid: 'default_user' });
+    if (!handler) return res.status(404).json({ error: 'Handler not found' });
+
+    // Avoid duplicate endpoints
+    const exists = handler.pushSubscriptions.some(s => s.endpoint === subscription.endpoint);
+    if (!exists) {
+      handler.pushSubscriptions.push({
+        endpoint: subscription.endpoint,
+        keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth },
+      });
+    }
+    handler.notificationsEnabled = true;
+    await handler.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Remove a push subscription (unsubscribe)
+app.post('/api/notifications/unsubscribe', async (req, res) => {
+  try {
+    const { handlerId, endpoint } = req.body;
+    if (!handlerId) return res.status(400).json({ error: 'handlerId is required' });
+    const handler = await Handler.findOne({ handleId: handlerId, uid: 'default_user' });
+    if (!handler) return res.status(404).json({ error: 'Handler not found' });
+
+    handler.pushSubscriptions = handler.pushSubscriptions.filter(s => s.endpoint !== endpoint);
+    if (handler.pushSubscriptions.length === 0) handler.notificationsEnabled = false;
+    await handler.save();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update notification times for a handler
+app.patch('/api/notifications/times', async (req, res) => {
+  try {
+    const { handlerId, times } = req.body; // times: ["09:00", "18:00"]
+    if (!handlerId || !Array.isArray(times)) {
+      return res.status(400).json({ error: 'handlerId and times[] are required' });
+    }
+    const handler = await Handler.findOneAndUpdate(
+      { handleId: handlerId, uid: 'default_user' },
+      { notificationTimes: times },
+      { new: true }
+    );
+    if (!handler) return res.status(404).json({ error: 'Handler not found' });
+    res.json({ ok: true, notificationTimes: handler.notificationTimes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Expose VAPID public key to the client
+app.get('/api/notifications/vapid-public-key', (req, res) => {
+  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
+});
+
+// Cron endpoint — called by Vercel cron (or external cron) to send posting reminders
+// Vercel cron hits this with a GET request; guard with CRON_SECRET header
+app.get('/api/cron/notify', async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (secret && req.headers['authorization'] !== `Bearer ${secret}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    // Current hour in IST (UTC+5:30)
+    const nowUTC = new Date();
+    const istOffset = 5 * 60 + 30; // minutes
+    const istMs = nowUTC.getTime() + istOffset * 60 * 1000;
+    const istDate = new Date(istMs);
+    const currentHour = String(istDate.getUTCHours()).padStart(2, '0');
+    const currentMinute = String(istDate.getUTCMinutes()).padStart(2, '0');
+    const currentHHMM = `${currentHour}:${currentMinute}`;
+
+    // Find handlers that have this time in their schedule
+    const handlers = await Handler.find({
+      notificationsEnabled: true,
+      notificationTimes: currentHHMM,
+      'pushSubscriptions.0': { $exists: true },
+    });
+
+    const payload = JSON.stringify({
+      title: 'Time to Post! 🎬',
+      body: 'Your scheduled posting time is now. Open TW to get started.',
+      icon: '/pwa-192.png',
+      badge: '/pwa-192.png',
+      url: '/',
+    });
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const handler of handlers) {
+      const deadEndpoints = [];
+      for (const sub of handler.pushSubscriptions) {
+        try {
+          await webPush.sendNotification(sub, payload);
+          sent++;
+        } catch (err) {
+          failed++;
+          // 410 Gone = subscription is no longer valid, clean it up
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            deadEndpoints.push(sub.endpoint);
+          }
+        }
+      }
+      if (deadEndpoints.length > 0) {
+        handler.pushSubscriptions = handler.pushSubscriptions.filter(
+          s => !deadEndpoints.includes(s.endpoint)
+        );
+        await handler.save();
+      }
+    }
+
+    res.json({ ok: true, handlersNotified: handlers.length, sent, failed, currentHHMM });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // --- Projects ---
 app.get('/api/projects', async (req, res) => {
