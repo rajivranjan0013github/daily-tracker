@@ -29,12 +29,13 @@ if (!MONGODB_URI) {
   process.exit(1);
 }
 
+app.use(cors());
+app.use(express.json());
+
 // Connect to MongoDB — cached for serverless (Vercel reuses the module between warm invocations)
-let mongoConnected = false;
 async function connectDB() {
-  if (mongoConnected) return;
+  if (mongoose.connection.readyState >= 1) return; // already connected or connecting
   await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 });
-  mongoConnected = true;
 }
 
 app.use(async (req, res, next) => {
@@ -45,9 +46,6 @@ app.use(async (req, res, next) => {
     res.status(500).json({ error: 'Database connection failed: ' + err.message });
   }
 });
-
-app.use(cors());
-app.use(express.json());
 
 // --- Web Push / VAPID setup ---
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
@@ -140,7 +138,6 @@ app.get('/api/cron/notify', async (req, res) => {
       notificationsEnabled: true,
       'pushSubscriptions.0': { $exists: true },
     });
-
     const payload = JSON.stringify({
       title: 'Time to Post! 🎬',
       body: 'Your scheduled posting time is now. Open TW to get started.',
@@ -156,7 +153,10 @@ app.get('/api/cron/notify', async (req, res) => {
       const deadEndpoints = [];
       for (const sub of handler.pushSubscriptions) {
         try {
-          await webPush.sendNotification(sub, payload);
+          const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('push timeout')), 8000)
+          );
+          await Promise.race([webPush.sendNotification(sub, payload), timeout]);
           sent++;
         } catch (err) {
           failed++;
