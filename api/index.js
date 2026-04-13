@@ -29,10 +29,22 @@ if (!MONGODB_URI) {
   process.exit(1);
 }
 
-// Connect to MongoDB
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+// Connect to MongoDB — cached for serverless (Vercel reuses the module between warm invocations)
+let mongoConnected = false;
+async function connectDB() {
+  if (mongoConnected) return;
+  await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 });
+  mongoConnected = true;
+}
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    res.status(500).json({ error: 'Database connection failed: ' + err.message });
+  }
+});
 
 app.use(cors());
 app.use(express.json());
