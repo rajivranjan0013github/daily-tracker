@@ -31,6 +31,10 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'public',
       filename: 'sw.js',
+      devOptions: {
+        enabled: true,
+        type: 'module',
+      },
       includeAssets: ['pwa-192.png', 'pwa-512.png'],
       manifest: {
         name: 'TW',
