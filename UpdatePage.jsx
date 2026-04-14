@@ -383,7 +383,8 @@ export default function UpdatePage() {
     localStorage.setItem('pendingDone', JSON.stringify(pendingDone));
   }, [pendingDone]);
 
-  // Preload the next video blob for each account so it's ready when the user taps "Post Next"
+  // Preload the next video blob for each account directly from Cloudflare.
+  // account.r2Prefix is the full https:// public CDN URL — no proxy, no Vercel involved.
   useEffect(() => {
     if (!accounts.length) return;
     let cancelled = false;
@@ -396,24 +397,23 @@ export default function UpdatePage() {
         const videoCount = account.videoCount || 0;
         if (videoNumber > videoCount) continue;
 
-        // Skip if we already have a fresh preload for this video
+        // Skip if we already have a fresh blob for this exact video number
         const existing = preloadedBlobs.current[accId];
         if (existing && existing.videoNumber === videoNumber) continue;
 
-        try {
-          // Get a presigned URL so we download directly from R2 (no Vercel proxy timeout)
-          const urlRes = await fetch(`${API_BASE_URL}/accounts/${accId}/video/${videoNumber}/download-url`);
-          if (cancelled || !urlRes.ok) continue;
-          const { url } = await urlRes.json();
+        const prefix = account.r2Prefix?.startsWith('http')
+          ? account.r2Prefix.replace(/\/+$/, '')
+          : null;
+        if (!prefix) continue;
 
-          const videoRes = await fetch(url);
+        try {
+          const videoRes = await fetch(`${prefix}/${videoNumber}.mp4`);
           if (cancelled || !videoRes.ok) continue;
           const blob = await videoRes.blob();
           if (cancelled) break;
-
           preloadedBlobs.current[accId] = { blob, videoNumber };
         } catch {
-          // Non-fatal — handlePostNext will fall back to fetching on demand
+          // Non-fatal — handlePostNext will fetch on demand
         }
       }
     };
@@ -659,19 +659,15 @@ export default function UpdatePage() {
       // Step 2: Try native share if on HTTPS (production)
       if (window.isSecureContext && navigator.share) {
         try {
-          // Use preloaded blob if available for this video, otherwise fetch via presigned URL
+          // Use preloaded blob if available, otherwise fetch directly from Cloudflare
           let blob = null;
           const preloaded = preloadedBlobs.current[accId];
           if (preloaded && preloaded.videoNumber === videoNumber) {
             blob = preloaded.blob;
           } else {
-            // Fetch presigned URL so we download directly from R2 (no Vercel proxy timeout)
-            const urlRes = await fetch(`${API_BASE_URL}/accounts/${accId}/video/${videoNumber}/download-url`);
-            if (urlRes.ok) {
-              const { url } = await urlRes.json();
-              const videoRes = await fetch(url);
-              if (videoRes.ok) blob = await videoRes.blob();
-            }
+            // data.videoUrl is the direct Cloudflare public URL — no Vercel proxy needed
+            const videoRes = await fetch(data.videoUrl);
+            if (videoRes.ok) blob = await videoRes.blob();
           }
 
           if (blob) {
