@@ -65,6 +65,30 @@ const API_BASE_URL = '/api';
 
 import { api } from './apiClient';
 
+// Clipboard helper — works on HTTPS and HTTP (local network)
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  // Fallback for non-secure contexts (e.g. http://local-ip)
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      resolve();
+    } catch (e) {
+      reject(e);
+    } finally {
+      document.body.removeChild(ta);
+    }
+  });
+}
+
 // --- Error Handling ---
 function handleAppError(error) {
   console.error('App Error: ', error);
@@ -622,7 +646,7 @@ function InstaTrackApp() {
       try {
         const captionRes = await api.getCaption(accId, videoNumber);
         if (captionRes.caption) {
-          await navigator.clipboard.writeText(captionRes.caption);
+          await copyToClipboard(captionRes.caption);
         }
       } catch (e) {
         console.warn('Could not copy caption:', e);
@@ -1229,7 +1253,7 @@ function InstaTrackApp() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 const url = `${window.location.origin}/?h=${h.handleId}`;
-                                navigator.clipboard.writeText(url).then(() => {
+                                copyToClipboard(url).then(() => {
                                   alert(`Link copied for ${h.name}!`);
                                 });
                               }}

@@ -30,6 +30,29 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 
+// Clipboard helper — works on HTTPS and HTTP (local network)
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      resolve();
+    } catch (e) {
+      reject(e);
+    } finally {
+      document.body.removeChild(ta);
+    }
+  });
+}
+
 const PLATFORMS = [
   { value: 'instagram', icon: Instagram, gradient: 'from-purple-500 via-pink-500 to-orange-400' },
   { value: 'facebook', icon: Facebook, gradient: 'from-blue-600 to-blue-400' },
@@ -648,7 +671,7 @@ export default function UpdatePage() {
         const captionRes = await fetch(`${API_BASE_URL}/accounts/${accId}/caption/${videoNumber}`);
         const captionData = await captionRes.json();
         if (captionData.caption) {
-          await navigator.clipboard.writeText(captionData.caption);
+          await copyToClipboard(captionData.caption);
           setCaptionCopied(prev => ({ ...prev, [accId]: true }));
           setTimeout(() => setCaptionCopied(prev => { const n = { ...prev }; delete n[accId]; return n; }), 5000);
         }

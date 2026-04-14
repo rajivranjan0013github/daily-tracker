@@ -10,7 +10,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     hmr: {
-      host: '172.20.10.6',
+      host: '10.112.234.145',
       protocol: 'wss'          // wss for HTTPS
     },
     // Proxy API calls to the backend — avoids mixed content (HTTPS page → HTTP API)
