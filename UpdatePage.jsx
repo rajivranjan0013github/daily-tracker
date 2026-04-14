@@ -391,6 +391,8 @@ export default function UpdatePage() {
   const [handlerData, setHandlerData] = useState(null); // { id, name }
   // Preloaded video blobs keyed by accId: { blob, videoNumber }
   const preloadedBlobs = useRef({});
+  // Preloaded captions keyed by accId: { text, videoNumber }
+  const preloadedCaptions = useRef({});
   const [pendingDone, setPendingDone] = useState(() => {
     try {
       const saved = localStorage.getItem('pendingDone');
@@ -437,6 +439,19 @@ export default function UpdatePage() {
           preloadedBlobs.current[accId] = { blob, videoNumber };
         } catch {
           // Non-fatal — handlePostNext will fetch on demand
+        }
+
+        // Preload caption so it can be copied synchronously on button tap
+        try {
+          const capRes = await fetch(`${API_BASE_URL}/accounts/${accId}/caption/${videoNumber}`);
+          if (!cancelled && capRes.ok) {
+            const capData = await capRes.json();
+            if (capData.caption) {
+              preloadedCaptions.current[accId] = { text: capData.caption, videoNumber };
+            }
+          }
+        } catch {
+          // Non-fatal
         }
       }
     };
@@ -653,6 +668,17 @@ export default function UpdatePage() {
   };
 
   const handlePostNext = async (accId) => {
+    // Copy caption synchronously within the user gesture — MUST be before any await
+    const preloadedCaption = preloadedCaptions.current[accId];
+    if (preloadedCaption) {
+      copyToClipboard(preloadedCaption.text)
+        .then(() => {
+          setCaptionCopied(prev => ({ ...prev, [accId]: true }));
+          setTimeout(() => setCaptionCopied(prev => { const n = { ...prev }; delete n[accId]; return n; }), 5000);
+        })
+        .catch(e => console.warn('Caption copy failed:', e));
+    }
+
     setSharingAccId(accId);
     try {
       // Step 1: Get video info WITHOUT advancing pointer
@@ -666,17 +692,19 @@ export default function UpdatePage() {
 
       const videoNumber = data.currentVideoNumber;
 
-      // Step 1.5: Auto-copy caption to clipboard
-      try {
-        const captionRes = await fetch(`${API_BASE_URL}/accounts/${accId}/caption/${videoNumber}`);
-        const captionData = await captionRes.json();
-        if (captionData.caption) {
-          await copyToClipboard(captionData.caption);
-          setCaptionCopied(prev => ({ ...prev, [accId]: true }));
-          setTimeout(() => setCaptionCopied(prev => { const n = { ...prev }; delete n[accId]; return n; }), 5000);
+      // Step 1.5: If no preloaded caption, try async fallback (works on desktop/Chrome)
+      if (!preloadedCaption) {
+        try {
+          const captionRes = await fetch(`${API_BASE_URL}/accounts/${accId}/caption/${videoNumber}`);
+          const captionData = await captionRes.json();
+          if (captionData.caption) {
+            await copyToClipboard(captionData.caption);
+            setCaptionCopied(prev => ({ ...prev, [accId]: true }));
+            setTimeout(() => setCaptionCopied(prev => { const n = { ...prev }; delete n[accId]; return n; }), 5000);
+          }
+        } catch (captionErr) {
+          console.warn('Could not fetch/copy caption:', captionErr);
         }
-      } catch (captionErr) {
-        console.warn('Could not fetch/copy caption:', captionErr);
       }
 
       // Step 2: Try native share if on HTTPS (production)
@@ -703,6 +731,7 @@ export default function UpdatePage() {
               setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
               // Invalidate preload so the next video gets preloaded
               delete preloadedBlobs.current[accId];
+              delete preloadedCaptions.current[accId];
               setSharingAccId(null);
               return;
             }
@@ -712,6 +741,7 @@ export default function UpdatePage() {
             // User cancelled share — still mark as pending so they can retry or confirm
             setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
             delete preloadedBlobs.current[accId];
+            delete preloadedCaptions.current[accId];
             setSharingAccId(null);
             return;
           }

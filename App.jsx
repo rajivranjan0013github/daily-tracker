@@ -230,6 +230,8 @@ function InstaTrackApp() {
   
   const [uploadState, setUploadState] = useState({});
   const [sharingAccId, setSharingAccId] = useState(null);
+  // Preloaded captions keyed by accId: { text, videoNumber }
+  const preloadedCaptions = useRef({});
   const [pendingDone, setPendingDone] = useState(() => {
     try {
       const saved = localStorage.getItem('pendingDone');
@@ -244,6 +246,30 @@ function InstaTrackApp() {
   useEffect(() => {
     localStorage.setItem('pendingDone', JSON.stringify(pendingDone));
   }, [pendingDone]);
+
+  // Preload captions so they can be copied synchronously on button tap
+  useEffect(() => {
+    if (!accounts.length) return;
+    let cancelled = false;
+    const preload = async () => {
+      for (const acc of accounts) {
+        if (cancelled) break;
+        const accId = acc.id || acc._id;
+        const videoNumber = acc.videoIndex || 1;
+        const existing = preloadedCaptions.current[accId];
+        if (existing && existing.videoNumber === videoNumber) continue;
+        try {
+          const res = await fetch(`${API_BASE_URL}/accounts/${accId}/caption/${videoNumber}`);
+          if (!cancelled && res.ok) {
+            const data = await res.json();
+            if (data.caption) preloadedCaptions.current[accId] = { text: data.caption, videoNumber };
+          }
+        } catch { /* non-fatal */ }
+      }
+    };
+    preload();
+    return () => { cancelled = true; };
+  }, [accounts]);
 
   const fetchData = async () => {
     try {
@@ -638,18 +664,27 @@ function InstaTrackApp() {
   };
 
   const handlePostNext = async (accId) => {
+    // Copy pre-fetched caption synchronously within the user gesture — MUST be before any await
+    const preloadedCaption = preloadedCaptions.current[accId];
+    if (preloadedCaption) {
+      copyToClipboard(preloadedCaption.text).catch(e => console.warn('Caption copy failed:', e));
+    }
+
     setSharingAccId(accId);
     try {
       const data = await api.getNextVideo(accId);
       const videoNumber = data.currentVideoNumber;
 
-      try {
-        const captionRes = await api.getCaption(accId, videoNumber);
-        if (captionRes.caption) {
-          await copyToClipboard(captionRes.caption);
+      // Fallback: async copy for desktop/Chrome when no caption was preloaded
+      if (!preloadedCaption) {
+        try {
+          const captionRes = await api.getCaption(accId, videoNumber);
+          if (captionRes.caption) {
+            await copyToClipboard(captionRes.caption);
+          }
+        } catch (e) {
+          console.warn('Could not copy caption:', e);
         }
-      } catch (e) {
-        console.warn('Could not copy caption:', e);
       }
 
       if (window.isSecureContext && navigator.share) {
@@ -661,6 +696,7 @@ function InstaTrackApp() {
             if (navigator.canShare?.({ files: [file] })) {
               await navigator.share({ files: [file], title: `video_${videoNumber}.mp4` });
               setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+              delete preloadedCaptions.current[accId];
               setSharingAccId(null);
               return;
             }
@@ -668,6 +704,7 @@ function InstaTrackApp() {
         } catch (shareErr) {
           if (shareErr.name === 'AbortError') {
             setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+            delete preloadedCaptions.current[accId];
             setSharingAccId(null);
             return;
           }
@@ -675,6 +712,7 @@ function InstaTrackApp() {
       }
       window.open(data.videoUrl, '_blank');
       setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+      delete preloadedCaptions.current[accId];
       setSharingAccId(null);
     } catch (err) {
       alert(err.message);
