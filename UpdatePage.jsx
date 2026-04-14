@@ -752,6 +752,15 @@ export default function UpdatePage() {
     }
   };
 
+  const handleNotPosted = (accId) => {
+    // Video wasn't posted — keep the pointer where it is, just dismiss the pending state
+    setPendingDone(prev => {
+      const next = { ...prev };
+      delete next[accId];
+      return next;
+    });
+  };
+
   const handleLinkR2 = async (accId) => {
     const accData = accounts.find(a => (a.account._id || a.account.id) === accId);
     if (!accData) return;
@@ -1286,14 +1295,23 @@ export default function UpdatePage() {
                   {/* Post Next Video — two-step: Post opens video, Mark Done advances pointer */}
                   {(accData.account.videoCount || 0) > 0 && (
                     pendingDone[accId] ? (
-                      // Step 2: Mark as Done button
-                      <button
-                        onClick={() => handleMarkDone(accId)}
-                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl text-xs font-bold transition-all bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-100 active:scale-95 animate-pulse"
-                      >
-                        <CheckCheck className="w-4 h-4" />
-                        Mark #{pendingDone[accId]} Done ??✓
-                      </button>
+                      // Step 2: Not Posted or Mark Done
+                      <div className="flex-1 flex gap-2">
+                        <button
+                          onClick={() => handleNotPosted(accId)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl text-xs font-bold transition-all bg-stone-400 text-white hover:bg-stone-500 active:scale-95"
+                        >
+                          <X className="w-4 h-4" />
+                          Not Posted
+                        </button>
+                        <button
+                          onClick={() => handleMarkDone(accId)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl text-xs font-bold transition-all bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-100 active:scale-95 animate-pulse"
+                        >
+                          <CheckCheck className="w-4 h-4" />
+                          Mark #{pendingDone[accId]} Done ✓
+                        </button>
+                      </div>
                     ) : (
                       // Step 1: Open / Share video
                       <button
