@@ -9,7 +9,7 @@ import { Project } from './models/Project.js';
 import { Handler } from './models/Handler.js';
 import { Account } from './models/Account.js';
 import { VideoPost } from './models/VideoPost.js';
-import { getPresignedUploadUrl, getR2Object, countR2Videos, R2_PUBLIC_URL } from './r2Client.js';
+import { getPresignedUploadUrl, getPresignedDownloadUrl, getR2Object, countR2Videos, R2_PUBLIC_URL } from './r2Client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -536,6 +536,27 @@ app.get('/api/accounts/:id/video/:number', async (req, res) => {
     });
 
     stream.pipe(res);
+  } catch (err) {
+    if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Return a short-lived presigned GET URL so the client can download directly from R2
+// This avoids streaming through Vercel serverless (timeout / memory limits)
+app.get('/api/accounts/:id/video/:number/download-url', async (req, res) => {
+  try {
+    const account = await Account.findById(req.params.id);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+
+    const videoNumber = parseInt(req.params.number, 10);
+    const folderPrefix = getFolderPrefix(account);
+    const key = `${folderPrefix}/${videoNumber}.mp4`;
+
+    const url = await getPresignedDownloadUrl(key, 3600);
+    res.json({ url, videoNumber });
   } catch (err) {
     if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
       return res.status(404).json({ error: 'Video not found' });

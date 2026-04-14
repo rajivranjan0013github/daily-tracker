@@ -70,6 +70,20 @@ export async function getPresignedUploadUrl(key, contentType = 'video/mp4', expi
 }
 
 /**
+ * Generate a presigned GET URL for downloading a file directly from R2.
+ * @param {string} key - The object key (e.g., "username/3.mp4")
+ * @param {number} expiresIn - URL validity in seconds (default 3600 = 1 hour)
+ * @returns {Promise<string>} presigned URL
+ */
+export async function getPresignedDownloadUrl(key, expiresIn = 3600) {
+  const command = new GetObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: key,
+  });
+  return getSignedUrl(r2Client, command, { expiresIn });
+}
+
+/**
  * Get an object from R2 as a readable stream.
  * @param {string} key - The object key (e.g., "username/3.mp4")
  * @returns {Promise<{stream: ReadableStream, contentType: string, contentLength: number}>}

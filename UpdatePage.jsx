@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
 import {
   Instagram,
@@ -366,6 +366,8 @@ export default function UpdatePage() {
   const [sharingAccId, setSharingAccId] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [handlerData, setHandlerData] = useState(null); // { id, name }
+  // Preloaded video blobs keyed by accId: { blob, videoNumber }
+  const preloadedBlobs = useRef({});
   const [pendingDone, setPendingDone] = useState(() => {
     try {
       const saved = localStorage.getItem('pendingDone');
@@ -380,6 +382,45 @@ export default function UpdatePage() {
   useEffect(() => {
     localStorage.setItem('pendingDone', JSON.stringify(pendingDone));
   }, [pendingDone]);
+
+  // Preload the next video blob for each account so it's ready when the user taps "Post Next"
+  useEffect(() => {
+    if (!accounts.length) return;
+    let cancelled = false;
+
+    const preload = async () => {
+      for (const { account } of accounts) {
+        if (cancelled) break;
+        const accId = account._id || account.id;
+        const videoNumber = account.videoIndex || 1;
+        const videoCount = account.videoCount || 0;
+        if (videoNumber > videoCount) continue;
+
+        // Skip if we already have a fresh preload for this video
+        const existing = preloadedBlobs.current[accId];
+        if (existing && existing.videoNumber === videoNumber) continue;
+
+        try {
+          // Get a presigned URL so we download directly from R2 (no Vercel proxy timeout)
+          const urlRes = await fetch(`${API_BASE_URL}/accounts/${accId}/video/${videoNumber}/download-url`);
+          if (cancelled || !urlRes.ok) continue;
+          const { url } = await urlRes.json();
+
+          const videoRes = await fetch(url);
+          if (cancelled || !videoRes.ok) continue;
+          const blob = await videoRes.blob();
+          if (cancelled) break;
+
+          preloadedBlobs.current[accId] = { blob, videoNumber };
+        } catch {
+          // Non-fatal — handlePostNext will fall back to fetching on demand
+        }
+      }
+    };
+
+    preload();
+    return () => { cancelled = true; };
+  }, [accounts]);
 
   const urlHandlerId = new URLSearchParams(window.location.search).get('h');
   const savedHandlerId = localStorage.getItem('handlerId');
@@ -618,10 +659,22 @@ export default function UpdatePage() {
       // Step 2: Try native share if on HTTPS (production)
       if (window.isSecureContext && navigator.share) {
         try {
-          const proxyUrl = `${API_BASE_URL}/accounts/${accId}/video/${videoNumber}`;
-          const videoRes = await fetch(proxyUrl);
-          if (videoRes.ok) {
-            const blob = await videoRes.blob();
+          // Use preloaded blob if available for this video, otherwise fetch via presigned URL
+          let blob = null;
+          const preloaded = preloadedBlobs.current[accId];
+          if (preloaded && preloaded.videoNumber === videoNumber) {
+            blob = preloaded.blob;
+          } else {
+            // Fetch presigned URL so we download directly from R2 (no Vercel proxy timeout)
+            const urlRes = await fetch(`${API_BASE_URL}/accounts/${accId}/video/${videoNumber}/download-url`);
+            if (urlRes.ok) {
+              const { url } = await urlRes.json();
+              const videoRes = await fetch(url);
+              if (videoRes.ok) blob = await videoRes.blob();
+            }
+          }
+
+          if (blob) {
             const fileName = `video_${videoNumber}.mp4`;
             const file = new File([blob], fileName, { type: 'video/mp4' });
 
@@ -629,6 +682,8 @@ export default function UpdatePage() {
               await navigator.share({ files: [file], title: fileName });
               // Share sheet opened — mark as pending done
               setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+              // Invalidate preload so the next video gets preloaded
+              delete preloadedBlobs.current[accId];
               setSharingAccId(null);
               return;
             }
@@ -637,9 +692,11 @@ export default function UpdatePage() {
           if (shareErr.name === 'AbortError') {
             // User cancelled share — still mark as pending so they can retry or confirm
             setPendingDone(prev => ({ ...prev, [accId]: videoNumber }));
+            delete preloadedBlobs.current[accId];
             setSharingAccId(null);
             return;
           }
+          console.error('Share failed:', shareErr);
         }
       }
 
