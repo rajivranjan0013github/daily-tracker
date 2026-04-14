@@ -358,6 +358,7 @@ app.post('/api/accounts/:id/link-r2', async (req, res) => {
     
     // Auto-detect video count if not provided
     let detectionWarning = null;
+    let detectionError = null;
     if (typeof videoCount !== 'number') {
       const folderPrefix = getFolderPrefix(account);
       try {
@@ -365,9 +366,12 @@ app.post('/api/accounts/:id/link-r2', async (req, res) => {
         videoCount = detection.count;
         if (videoCount > 0 && !detection.hasFirst) {
           detectionWarning = `Detected ${videoCount} videos, but "1.mp4" was not found. Ensure filenames are 1.mp4, 2.mp4, etc.`;
+        } else if (videoCount === 0) {
+          detectionWarning = `No .mp4 files found in folder "${folderPrefix}". Check that the URL and folder name are correct, or enter the count manually.`;
         }
       } catch (detErr) {
         console.warn('R2 auto-detection failed:', detErr);
+        detectionError = `Auto-detection failed: ${detErr.message}. Provide the video count manually.`;
       }
     }
 
@@ -380,12 +384,12 @@ app.post('/api/accounts/:id/link-r2', async (req, res) => {
     
     await account.save();
 
-    res.json({ 
+    res.json({
       message: `Linked R2 directory to account @${account.username}`,
       r2Prefix: account.r2Prefix,
       videoCount: account.videoCount,
       videoIndex: account.videoIndex,
-      warning: detectionWarning
+      warning: detectionWarning || detectionError,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
