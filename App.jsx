@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Component } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Component } from 'react';
 import { format, startOfToday, subDays, eachDayOfInterval } from 'date-fns';
 import {
   Plus,
